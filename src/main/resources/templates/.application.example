@@ -1,0 +1,99 @@
+server:
+  port: 8080
+
+app:
+  file:
+    # Folder tujuan untuk menyimpan hasil generate
+    output-dir-spike: ${APP_OUTPUT_DIR:${user.home}/Documents/output_spike_chatai}
+  k6:
+    workspace-root: ${APP_OUTPUT_DIR:${user.home}/Documents/workspace/workspace_agentic_ai/performace_test_2_15_0_k6}
+
+jira:
+  # Contoh: https://company.atlassian.net
+  development:
+    enabled: true            # false = matikan sepenuhnya
+    parallelism: 6
+    max-tickets: 300
+    main-branches: develop-support
+  base-url:
+  email:
+  api-token:
+  project-key:
+  default-fix-version:
+  max-results: 100
+  max-pages: 50
+  template: classpath:jira/Pre_Deployment_Checklist_template.xlsx
+  cache-ttl-minutes: 10
+  max-issues: 1000
+  jql:
+    # {fixVersion} diganti versi yang dipilih di dashboard
+    all-tickets: '"Platform[Dropdown]" = Backend AND fixVersion = "{fixVersion}" AND worktype != Bug and status NOT IN (Cancelled, Closed) ORDER BY Sprint ASC'
+    # Tiket DevOps biasanya ada di project lain. Kosong = tidak ditarik. Contoh:
+    # devops: 'project = MD AND fixVersion = "{fixVersion}" ORDER BY created ASC'
+    devops: '"Application[Dropdown]"="Cluster UBP" and "Apps Version[Dropdown]"={fixVersionShort} order by created DESC'
+    # Kosong = diturunkan dari All Ticket (summary memuat "DDL")
+    ddl: ''
+    # Kosong = diturunkan dari All Ticket (summary memuat hotfix / sanity)
+    hotfix: ''
+  # Nama field Jira; ID customfield dicari otomatis. Isi *-id hanya bila perlu memaksa ID tertentu.
+  field-names:
+    story-points: Story Points,Story point estimate
+    sprint: Sprint
+    using-prda-api: "Using PRDA API?"
+  bugs:
+    jql: '"Platform[Dropdown]"=Backend and project="PRDI Digital Ops" order by created DESC'
+    max-issues: 2000
+    critical-priorities: Highest,Critical,Blocker,High
+    aging-days: 14
+bitbucket:
+  api:
+    token:
+    username:
+    password:
+
+spring:
+  application:
+    name: genai
+  security:
+    user:
+      name:
+      password:
+      roles: ADMIN
+  ai:
+    # 1. Konfigurasi Google GenAI (Gemini)
+    google:
+      genai:
+        api-key:
+        project-id: gen-lang-client-0077630139
+        # untuk standard GenAI API, api-key sudah cukup.
+        chat:
+          options:
+            model: gemini-3.5-flash-lite # <-- Nama model harus diletakkan di dalam options ini
+            temperature: 0.3
+            # tool-choice: ANY      # (Uncomment jika Anda sudah implementasi @Bean function-nya)
+            # functions:            # Format yang benar untuk mendaftarkan function di Spring AI
+            #   - get_weather
+            #   - get_forecast
+
+    # 2. Konfigurasi Ollama (Diberi komentar sementara untuk menghindari konflik 2 model)
+    # ollama:
+    #   base-url: http://localhost:11434
+    #   chat:
+    #     options:
+    #       model: llama3.1
+
+# Spring Boot Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging configuration
+logging:
+  level:
+    "[com.hito.genai]": INFO
+    "[org.springframework.ai]": DEBUG

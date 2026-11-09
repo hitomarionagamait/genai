@@ -1,0 +1,56 @@
+.root-info { font-size: 0.85rem; margin-top: 4px; }
+.root-info code { background: #e9ecef; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+
+.k6-form { padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; flex-direction: column; gap: 14px; }
+.panel-section { border: 1px solid #dee2e6; border-radius: 8px; background: #fff; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.panel-section h2 { margin: 0; font-size: 1rem; color: #263238; }
+.panel-section label { display: flex; flex-direction: column; gap: 5px; color: #495057; font-size: .85rem; min-width: 0; }
+.k6-form .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
+.k6-form .row > label { flex: 1; min-width: 210px; }
+.k6-form input[type="text"], .k6-form input[type="number"], .k6-form select, .k6-form textarea {
+    width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #ced4da; border-radius: 5px;
+    font-size: .92rem; font-family: inherit; outline: none; background: #fff; color: #212529;
+}
+.k6-form textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.k6-form input:focus, .k6-form select:focus, .k6-form textarea:focus { border-color: #007bff; box-shadow: 0 0 0 2px rgba(0,123,255,.1); }
+.checkbox-stack { min-width: 245px; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.k6-form label.check { flex-direction: row; align-items: center; gap: 8px; font-size: .85rem; }
+.k6-form label.check input { margin: 0; }
+.help-text { margin: 0; color: #6c757d; font-size: .8rem; line-height: 1.45; }
+.section-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.section-heading > div:first-child { flex: 1; min-width: 220px; }
+.endpoint-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.endpoint-list { display: flex; flex-direction: column; gap: 10px; }
+.endpoint-card { border: 1px solid #d7dee5; border-left: 4px solid #0d6efd; border-radius: 7px; padding: 12px; background: #fbfcfd; display: flex; flex-direction: column; gap: 10px; }
+.endpoint-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.endpoint-card-head strong { font-size: .88rem; color: #263238; }
+.endpoint-grid { display: grid; grid-template-columns: repeat(4, minmax(145px, 1fr)); gap: 10px; }
+.endpoint-grid .span-2 { grid-column: span 2; }
+.endpoint-grid .span-4 { grid-column: span 4; }
+.endpoint-card .json-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.endpoint-card textarea { min-height: 62px; }
+.btn { cursor: pointer; border: 0; border-radius: 5px; padding: 9px 13px; font-size: .88rem; }
+.btn-primary { background: #0d6efd; color: #fff; }
+.btn-secondary { background: #e9ecef; color: #343a40; }
+.btn-danger { background: #fff0f0; color: #b02a37; border: 1px solid #f1b0b7; }
+.btn:disabled, .k6-form button:disabled { opacity: .65; cursor: not-allowed; }
+.k6-form .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.message-bubble { white-space: pre-wrap; overflow-wrap: anywhere; }
+.message.ai .message-bubble { max-width: 95%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }
+.saved-files, .backup-files { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #adb5bd; font-family: inherit; }
+.saved-files strong, .backup-files strong { display: block; margin-bottom: 4px; }
+.saved-files code { display: block; color: #1b5e20; }
+.backup-files code { display: block; color: #6c5700; }
+.loading { opacity: .7; }
+
+@media (max-width: 760px) {
+    .endpoint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .endpoint-grid .span-4 { grid-column: span 2; }
+    .endpoint-card .json-fields { grid-template-columns: 1fr; }
+    .endpoint-actions { width: 100%; }
+    .endpoint-actions button { flex: 1; }
+}
+@media (max-width: 430px) {
+    .endpoint-grid { grid-template-columns: 1fr; }
+    .endpoint-grid .span-2, .endpoint-grid .span-4 { grid-column: span 1; }
+}

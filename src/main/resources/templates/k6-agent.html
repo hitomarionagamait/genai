@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K6 Performance Test Agent</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/k6-agent.css">
+</head>
+<body>
+<div class="container">
+    <header>
+        <a href="/" class="back-link">← Back</a>
+        <h1>⚡ K6 Performance Test Agent</h1>
+        <p>Tambahkan endpoint performance test dan biarkan agent mengintegrasikannya ke struktur project k6.</p>
+        <p class="root-info">Workspace root: <code id="workspace-root">memuat...</code></p>
+    </header>
+
+    <main class="chat-container">
+        <form id="k6-form" class="k6-form">
+            <section class="panel-section">
+                <h2>Project & output</h2>
+                <div class="row">
+                    <label>Mode kerja
+                        <select id="generation-mode">
+                            <option value="new">Generate file baru (tidak mengubah file existing)</option>
+                            <option value="extend">Update / integrasikan ke project existing</option>
+                        </select>
+                    </label>
+                    <label>Jenis tes
+                        <select id="test-type">
+                            <option value="smoke">smoke</option>
+                            <option value="load" selected>load</option>
+                            <option value="stress">stress</option>
+                            <option value="spike">spike</option>
+                            <option value="soak">soak</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="row">
+                    <label>Folder tujuan (relatif ke root) *
+                        <input type="text" id="target-folder" list="folder-list" value="generated" placeholder="contoh: generated atau ." required autocomplete="off">
+                    </label>
+                    <label>Folder referensi k6 (opsional)
+                        <input type="text" id="reference-folder" list="folder-list" value="." placeholder="contoh: ." autocomplete="off">
+                    </label>
+                    <datalist id="folder-list"></datalist>
+                </div>
+                <div class="row">
+                    <label>Base URL override (opsional)
+                        <input type="text" id="base-url" placeholder="https://staging.example.com" autocomplete="off">
+                    </label>
+                    <div class="checkbox-stack">
+                        <label class="check"><input type="checkbox" id="overwrite"> Izinkan overwrite file existing</label>
+                        <label class="check"><input type="checkbox" id="backup-before-overwrite" checked> Backup file sebelum overwrite</label>
+                    </div>
+                </div>
+                <p id="mode-help" class="help-text">Mode file baru akan menyimpan hasil ke subfolder tujuan. Referensi project akan dibaca agar gaya script tetap konsisten.</p>
+            </section>
+
+            <section class="panel-section endpoint-section">
+                <div class="section-heading">
+                    <div>
+                        <h2>Endpoint baru / tambahan</h2>
+                        <p class="help-text">Isi detail endpoint. Field header dan body menggunakan JSON; biarkan kosong bila tidak diperlukan. POST/PUT/PATCH/DELETE dapat mengubah data: jalankan hanya di UAT/staging dengan data uji.</p>
+                    </div>
+                    <div class="endpoint-actions">
+                        <button type="button" id="load-current-endpoints-btn" class="btn btn-secondary">Muat endpoint 2.15.0</button>
+                        <button type="button" id="add-endpoint-btn" class="btn btn-primary">+ Endpoint</button>
+                    </div>
+                </div>
+                <div id="endpoint-list" class="endpoint-list"></div>
+            </section>
+
+            <section class="panel-section">
+                <label>Daftar API tambahan (opsional)
+                    <textarea id="api-list" rows="4" placeholder="Tempel curl, OpenAPI, atau daftar API dalam format bebas. Contoh:&#10;GET /api/v1/products&#10;POST /api/v1/orders {&quot;productId&quot;: 1, &quot;qty&quot;: 2}"></textarea>
+                </label>
+                <label>Instruksi tambahan / lanjutan
+                    <textarea id="message" rows="3" placeholder="Contoh: gunakan auth patient, tambahkan ke scenario patients_verification, threshold p95 < 400ms, dan pertahankan pola tag endpoint yang sudah ada."></textarea>
+                </label>
+            </section>
+
+            <div class="actions">
+                <button type="submit" id="send-btn" class="btn btn-primary">Generate / Update Project</button>
+                <button type="button" id="new-session-btn" class="btn btn-secondary">Sesi baru</button>
+            </div>
+        </form>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+    </main>
+</div>
+
+<script src="/js/k6-agent.js"></script>
+</body>
+</html>

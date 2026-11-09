@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bug Monitor - Jira</title>
+    <link rel="stylesheet" href="/css/jira-report.css">
+    <link rel="stylesheet" href="/css/bug-monitor.css">
+</head>
+<body>
+<div class="wrap">
+
+    <header class="top">
+        <a href="/" class="back">← Back</a>
+        <h1>🐞 Bug Monitor</h1>
+        <p class="sub">Tiket dikelompokkan per versi (major.minor); detail tiap baris tetap menampilkan fixVersion lengkap</p>
+    </header>
+
+    <div class="banner warn" th:if="${!configured}">
+        <strong>Jira belum dikonfigurasi.</strong> Set <code>JIRA_BASE_URL</code>, <code>JIRA_EMAIL</code>, <code>JIRA_API_TOKEN</code> lalu jalankan ulang aplikasi.
+    </div>
+    <div class="banner error" th:if="${error != null}" th:text="${error}"></div>
+
+    <th:block th:if="${report != null}">
+
+        <div class="meta">
+            <span>diambil <strong th:text="${generatedAtText}"></strong> · cache singkat</span>
+            <a class="btn" th:href="@{/bug-monitor(refresh=true)}">↻ Ambil ulang dari Jira</a>
+        </div>
+
+        <ul class="warnings" th:if="${!report.warnings.isEmpty()}">
+            <li th:each="w : ${report.warnings}" th:text="${w}"></li>
+        </ul>
+        <details class="jql">
+            <summary>JQL yang dipakai</summary>
+            <div class="jql-item"><code th:text="${report.jql}"></code></div>
+        </details>
+
+        <!-- KPI -->
+        <section class="kpis">
+            <div class="kpi"><div class="num" th:text="${report.total}"></div><div class="lbl">Total Tiket</div></div>
+            <div class="kpi warnk"><div class="num" th:text="${report.open}"></div><div class="lbl">Open</div></div>
+            <div class="kpi okk"><div class="num" th:text="${report.closed}"></div><div class="lbl">Selesai</div></div>
+            <div class="kpi" th:classappend="${report.criticalOpen > 0} ? 'alert redk'"><div class="num" th:text="${report.criticalOpen}"></div><div class="lbl">Open Kritis</div></div>
+            <div class="kpi" th:classappend="${report.unassignedOpen > 0} ? 'alert'"><div class="num" th:text="${report.unassignedOpen}"></div><div class="lbl">Open Belum Di-assign</div></div>
+            <div class="kpi" th:classappend="${report.agingOpen > 0} ? 'alert'"><div class="num" th:text="${report.agingOpen}"></div><div class="lbl" th:text="${'Aging (> ' + report.agingDays + ' hari)'}"></div></div>
+            <div class="kpi"><div class="num" th:text="${report.avgOpenAgeDays}"></div><div class="lbl">Rata-rata Umur Open (hari)</div></div>
+            <div class="kpi"><div class="num" th:text="${report.noFixVersion}"></div><div class="lbl">Tanpa fixVersion</div></div>
+            <div class="kpi"><div class="num" th:text="${report.created7d}"></div><div class="lbl">Dibuat 7 Hari</div></div>
+            <div class="kpi"><div class="num" th:text="${report.resolved7d}"></div><div class="lbl">Selesai 7 Hari</div></div>
+        </section>
+
+        <!-- Ringkasan -->
+        <section class="grid2">
+            <div class="card wide">
+                <h3>Bug per Grup Versi <span class="hint-inline">(tiket dengan &gt;1 fixVersion dihitung di tiap grup-nya)</span></h3>
+                <div class="legend"><i class="dot open"></i> Open <i class="dot done"></i> Selesai</div>
+                <div class="grow" th:each="g : ${report.groups}">
+                    <span class="blabel" th:text="${g.shortVersion}"></span>
+                    <span class="stack">
+                        <i class="seg open" th:style="'width:' + ${g.openWidth} + '%'"></i><i class="seg done" th:style="'width:' + ${g.closedWidth} + '%'"></i>
+                    </span>
+                    <span class="bval" th:text="${g.open + ' open / ' + g.total}"></span>
+                </div>
+            </div>
+            <div class="card wide">
+                <h3>Tren 8 Minggu Terakhir</h3>
+                <div class="legend"><i class="dot created"></i> Dibuat <i class="dot done"></i> Selesai</div>
+                <div class="trow" th:each="w : ${report.weekly}">
+                    <span class="blabel" th:text="${w.label}"></span>
+                    <span class="twin">
+                        <span class="bar sm"><i class="created" th:style="'width:' + ${w.createdPct} + '%'"></i></span>
+                        <span class="bar sm"><i class="done" th:style="'width:' + ${w.resolvedPct} + '%'"></i></span>
+                    </span>
+                    <span class="bval" th:text="${w.created + ' dibuat · ' + w.resolved + ' selesai'}"></span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Per Status</h3>
+                <div class="barrow" th:each="s : ${report.byStatus}">
+                    <span class="blabel" th:text="${s.label}"></span>
+                    <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                    <span class="bval" th:text="${s.count}"></span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Per Prioritas</h3>
+                <div class="barrow" th:each="s : ${report.byPriority}">
+                    <span class="blabel" th:text="${s.label}"></span>
+                    <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                    <span class="bval" th:text="${s.count}"></span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Open per Assignee</h3>
+                <div class="barrow" th:each="s : ${report.openByAssignee}">
+                    <span class="blabel" th:text="${s.label}"></span>
+                    <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                    <span class="bval" th:text="${s.count}"></span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Per Tipe Issue</h3>
+                <div class="barrow" th:each="s : ${report.byIssueType}">
+                    <span class="blabel" th:text="${s.label}"></span>
+                    <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                    <span class="bval" th:text="${s.count}"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filter -->
+        <form class="filters bugfilters" onsubmit="return false">
+            <input type="search" id="f-q" placeholder="Cari key, summary, assignee, fixVersion…">
+            <select id="f-group">
+                <option value="">Semua grup versi</option>
+                <option th:each="g : ${report.groups}" th:value="${g.shortVersion}" th:text="${g.shortVersion + ' (' + g.total + ')'}"></option>
+            </select>
+            <select id="f-status">
+                <option value="">Open + Selesai</option>
+                <option value="open">Hanya Open</option>
+                <option value="done">Hanya Selesai</option>
+            </select>
+            <select id="f-priority">
+                <option value="">Semua prioritas</option>
+                <option th:each="s : ${report.byPriority}" th:value="${s.label}" th:text="${s.label}"></option>
+            </select>
+            <label class="chk"><input type="checkbox" id="f-critical"> Kritis</label>
+            <label class="chk"><input type="checkbox" id="f-unassigned"> Belum di-assign</label>
+            <label class="chk"><input type="checkbox" id="f-aging"> Aging</label>
+            <button type="button" class="btn" id="expand-all">Buka semua</button>
+            <button type="button" class="btn" id="collapse-all">Tutup semua</button>
+            <span class="hint" id="f-info"></span>
+        </form>
+
+        <!-- Grup versi -->
+        <details class="vgroup" th:each="g, gi : ${report.groups}" th:attr="data-group=${g.shortVersion}" th:open="${g.shortVersion == openGroup}">
+            <summary>
+                <span class="gname" th:classappend="${g.noVersion} ? 'none'" th:text="${g.shortVersion}"></span>
+                <span class="gstat"><strong th:text="${g.total}"></strong> tiket</span>
+                <span class="badge pr-open" th:text="${g.open + ' open'}"></span>
+                <span class="badge pr-merged" th:text="${g.closed + ' selesai'}"></span>
+                <span class="badge prio-highest" th:if="${g.criticalOpen > 0}" th:text="${g.criticalOpen + ' kritis'}"></span>
+                <span class="badge" th:if="${g.unassignedOpen > 0}" th:text="${g.unassignedOpen + ' belum di-assign'}"></span>
+                <span class="vchips">
+                    <span class="fv" th:each="v : ${g.versions}"
+                          th:text="${v.fullName + ' · ' + v.total + (v.open > 0 ? ' (' + v.open + ' open)' : '')}"></span>
+                </span>
+                <span class="gshown hint"></span>
+            </summary>
+            <div class="scroll">
+                <table class="tbl small">
+                    <thead>
+                    <tr><th>Key</th><th>Summary</th><th>Tipe</th><th>Prioritas</th><th>Status</th><th>fixVersion</th>
+                        <th>Assignee</th><th>Reporter</th><th>Dibuat</th><th title="Open: umur tiket. Selesai: lama penyelesaian.">Umur (hari)</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="b : ${g.bugs}" data-row="1"
+                        th:classappend="${b.open} ? '' : 'row-done'"
+                        th:attr="data-open=${b.open},data-priority=${b.priority},data-critical=${b.critical},data-unassigned=${b.assignee.isEmpty()},data-aging=${b.aging}">
+                        <td class="nowrap"><a th:href="${b.link}" target="_blank" rel="noopener" th:text="${b.key}"></a></td>
+                        <td class="summary" th:text="${b.summary}"></td>
+                        <td class="nowrap" th:text="${b.issueType}"></td>
+                        <td><span class="badge" th:classappend="${'prio-' + #strings.toLowerCase(b.priority)}" th:text="${b.priority}"></span></td>
+                        <td><span class="badge" th:classappend="${'cat-' + b.statusCategory}" th:text="${b.status}"></span></td>
+                        <td class="nowrap">
+                            <span class="fv" th:each="v : ${b.fixVersions}" th:text="${v}"></span>
+                            <span class="manual" th:if="${b.fixVersions.isEmpty()}">—</span>
+                        </td>
+                        <td class="nowrap" th:text="${b.assignee.isEmpty() ? '—' : b.assignee}" th:classappend="${b.assignee.isEmpty()} ? 'manual'"></td>
+                        <td class="nowrap" th:text="${b.reporter}"></td>
+                        <td class="nowrap" th:text="${b.created}"></td>
+                        <td class="num"><span class="age" th:classappend="${b.aging} ? 'aging'" th:text="${b.ageDays}"
+                                              th:title="${b.open ? 'Umur tiket (masih open)' : 'Lama penyelesaian'}"></span></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+
+        <div class="empty" th:if="${report.groups.isEmpty()}">Tidak ada tiket untuk JQL ini.</div>
+    </th:block>
+</div>
+<script src="/js/bug-monitor.js"></script>
+</body>
+</html>

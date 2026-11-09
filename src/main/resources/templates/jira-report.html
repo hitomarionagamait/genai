@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="id" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre Deployment Checklist - Jira Report</title>
+    <link rel="stylesheet" href="/css/jira-report.css">
+</head>
+<body>
+<div class="wrap">
+
+    <header class="top">
+        <a href="/" class="back">← Back</a>
+        <h1>📋 Pre Deployment Checklist</h1>
+        <p class="sub">Dashboard release dari Jira · mengikuti struktur template Excel</p>
+    </header>
+
+    <!-- ===== Pemilih fixVersion ===== -->
+    <form class="toolbar" method="get" th:action="@{/jira-report}" th:if="${configured}">
+        <label class="field">
+            <span>fixVersion</span>
+            <select name="fixVersion" id="fixVersion"
+                    th:if="${hasProjectKeys and versionsError == null and (!unreleased.isEmpty() or !released.isEmpty())}">
+                <option value="" th:selected="${selected.isEmpty()}">— pilih versi —</option>
+                <optgroup label="Belum rilis" th:if="${!unreleased.isEmpty()}">
+                    <option th:each="v : ${unreleased}" th:value="${v.name}" th:text="${v.name}"
+                            th:selected="${v.name == selected}"></option>
+                </optgroup>
+                <optgroup label="Sudah rilis" th:if="${!released.isEmpty()}">
+                    <option th:each="v : ${released}" th:value="${v.name}"
+                            th:text="${v.name + (v.releaseDate.isEmpty() ? '' : '  (' + v.releaseDate + ')')}"
+                            th:selected="${v.name == selected}"></option>
+                </optgroup>
+            </select>
+            <input type="text" name="fixVersion" id="fixVersion" placeholder="mis. v2.15.0" th:value="${selected}"
+                   th:unless="${hasProjectKeys and versionsError == null and (!unreleased.isEmpty() or !released.isEmpty())}">
+        </label>
+        <button class="btn primary" type="submit">Tampilkan</button>
+        <button class="btn" type="submit" name="refresh" value="true" title="Abaikan cache dan tarik ulang dari Jira">↻ Ambil ulang dari Jira</button>
+        <a class="btn accent" th:if="${report != null}"
+           th:href="@{/jira-report/export(fixVersion=${report.fixVersion})}">⬇ Download Excel (template)</a>
+    </form>
+
+    <!-- ===== Banner ===== -->
+    <div class="banner warn" th:if="${!configured}">
+        <strong>Jira belum dikonfigurasi.</strong> Set environment variable berikut lalu jalankan ulang aplikasi:
+        <pre>JIRA_BASE_URL=https://nama-site.atlassian.net
+JIRA_EMAIL=email-akun-jira
+JIRA_API_TOKEN=api-token-jira
+JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pre>
+    </div>
+    <div class="banner warn" th:if="${configured and !hasProjectKeys}">
+        <strong>Dropdown versi belum aktif.</strong> Isi <code>JIRA_PROJECT_KEYS</code> (mis. <code>BE,MD</code>) agar daftar
+        fixVersion diambil dari Jira. Sementara ini ketik versi secara manual.
+    </div>
+    <div class="banner error" th:if="${versionsError != null}" th:text="${'Daftar versi gagal dimuat: ' + versionsError}"></div>
+    <div class="banner error" th:if="${error != null}" th:text="${error}"></div>
+    <div class="empty" th:if="${configured and report == null and error == null}">
+        Pilih <strong>fixVersion</strong> lalu klik <strong>Tampilkan</strong> untuk memuat data dari Jira.
+    </div>
+
+    <!-- ===== Report ===== -->
+    <th:block th:if="${report != null}">
+
+        <div class="meta">
+            <span class="chip big" th:text="${report.fixVersion}"></span>
+            <span>diambil <strong th:text="${generatedAtText}"></strong> · cache singkat, gunakan “Ambil ulang” untuk data terbaru</span>
+        </div>
+
+        <ul class="warnings" th:if="${!report.warnings.isEmpty()}">
+            <li th:each="w : ${report.warnings}" th:text="${w}"></li>
+        </ul>
+
+        <details class="jql">
+            <summary>JQL yang dipakai (<span th:text="${report.sections.size()}"></span> sumber)</summary>
+            <div class="jql-item" th:each="s : ${report.sections}">
+                <div><strong th:text="${s.name}"></strong> · <span th:text="${s.count + ' tiket'}"></span>
+                    <span class="note" th:if="${!s.note.isEmpty()}" th:text="${' · ' + s.note}"></span></div>
+                <code th:text="${s.jql}"></code>
+            </div>
+        </details>
+
+        <!-- KPI -->
+        <section class="kpis">
+            <div class="kpi"><div class="num" th:text="${report.summary.totalTickets}"></div><div class="lbl">Total Tiket</div></div>
+            <div class="kpi"><div class="num" th:text="${report.summary.totalStoryPoints}"></div><div class="lbl">Story Points</div></div>
+            <div class="kpi" th:classappend="${report.summary.withoutStoryPoints > 0} ? 'alert'"><div class="num" th:text="${report.summary.withoutStoryPoints}"></div><div class="lbl">Tanpa Story Points</div></div>
+            <div class="kpi"><div class="num" th:text="${report.summary.assignees}"></div><div class="lbl">Assignee</div></div>
+            <div class="kpi"><div class="num" th:text="${report.summary.usingPrdaApi}"></div><div class="lbl">Pakai PRDA API</div></div>
+            <div class="kpi"><div class="num" th:text="${devopsTotal}"></div><div class="lbl">Tiket DevOps</div></div>
+            <div class="kpi"><div class="num" th:text="${report.ddl.size()}"></div><div class="lbl">Tiket DDL</div></div>
+            <div class="kpi"><div class="num" th:text="${report.hotfix.size()}"></div><div class="lbl">Hotfix / Sanity</div></div>
+        </section>
+
+        <!-- Tabs -->
+        <nav class="tabs" id="tabs">
+            <button type="button" data-tab="summary" class="active">Ringkasan</button>
+            <button type="button" data-tab="all">All Ticket <span class="count" th:text="${report.tickets.size()}"></span></button>
+            <button type="button" data-tab="devops">DevOps Ticket <span class="count" th:text="${devopsTotal}"></span></button>
+            <button type="button" data-tab="ddl">DDL Ticket <span class="count" th:text="${report.ddl.size()}"></span></button>
+            <button type="button" data-tab="repo">Repo Impacted <span class="count" th:text="${report.repos.size()}"></span></button>
+            <button type="button" data-tab="db">Database Related <span class="count" th:text="${report.db.size()}"></span></button>
+            <button type="button" data-tab="checklist">Checklist</button>
+            <button type="button" data-tab="hotfix">Hotfix OR Sanity <span class="count" th:text="${report.hotfix.size()}"></span></button>
+        </nav>
+
+        <!-- ===== Ringkasan ===== -->
+        <section class="panel active" id="tab-summary">
+            <div class="grid2">
+                <div class="card">
+                    <h3>Per Tipe Issue</h3>
+                    <div class="barrow" th:each="s : ${report.summary.byIssueType}">
+                        <span class="blabel" th:text="${s.label}"></span>
+                        <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                        <span class="bval" th:text="${s.count + ' · ' + s.storyPoints + ' SP'}"></span>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Per Status</h3>
+                    <div class="barrow" th:each="s : ${report.summary.byStatus}">
+                        <span class="blabel" th:text="${s.label}"></span>
+                        <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                        <span class="bval" th:text="${s.count}"></span>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Per Assignee</h3>
+                    <div class="barrow" th:each="s : ${report.summary.byAssignee}">
+                        <span class="blabel" th:text="${s.label}"></span>
+                        <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                        <span class="bval" th:text="${s.count + ' · ' + s.storyPoints + ' SP'}"></span>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Per Prioritas</h3>
+                    <div class="barrow" th:each="s : ${report.summary.byPriority}">
+                        <span class="blabel" th:text="${s.label}"></span>
+                        <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                        <span class="bval" th:text="${s.count}"></span>
+                    </div>
+                </div>
+                <div class="card wide">
+                    <h3>Per Parent / Epic</h3>
+                    <div class="barrow" th:each="s : ${report.summary.byEpic}">
+                        <span class="blabel long" th:text="${s.label}"></span>
+                        <span class="bar"><i th:style="'width:' + ${s.percent} + '%'"></i></span>
+                        <span class="bval" th:text="${s.count + ' · ' + s.storyPoints + ' SP'}"></span>
+                    </div>
+                </div>
+                <div class="card wide">
+                    <h3>Status Tiket DevOps per Environment</h3>
+                    <table class="tbl small">
+                        <thead><tr><th>Environment</th><th>Total</th><th>SUCCESS</th><th>ON PROGRESS</th><th>FAILED</th></tr></thead>
+                        <tbody>
+                        <tr th:each="e : ${envStats}">
+                            <td><span class="env" th:classappend="${'env-' + e.env.toLowerCase()}" th:text="${e.env}"></span></td>
+                            <td th:text="${e.total}"></td>
+                            <td><span class="badge st-success" th:text="${e.success}"></span></td>
+                            <td><span class="badge st-on-progress" th:text="${e.progress}"></span></td>
+                            <td><span class="badge st-failed" th:text="${e.failed}"></span></td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== All Ticket ===== -->
+        <section class="panel" id="tab-all">
+            <div class="filters">
+                <input type="search" id="all-filter" placeholder="Cari key, summary, assignee, parent…">
+                <select id="all-type">
+                    <option value="">Semua tipe</option>
+                    <option th:each="s : ${report.summary.byIssueType}" th:value="${s.label}" th:text="${s.label}"></option>
+                </select>
+                <span class="hint" id="all-visible"></span>
+            </div>
+            <div class="scroll">
+                <table class="tbl" id="all-table">
+                    <thead>
+                    <tr>
+                        <th>No</th><th>Issue Type</th><th>Issue key</th><th>Summary</th><th>Using PRDA API?</th>
+                        <th>Parent key</th><th>Parent summary</th><th>Assignee</th><th>Reporter</th><th>Sprint</th>
+                        <th>Status</th><th>Priority</th><th>Resolution</th><th>Created</th><th>Updated</th><th>SP</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="t, it : ${report.tickets}" th:attr="data-type=${t.issueType}">
+                        <td th:text="${it.count}"></td>
+                        <td th:text="${t.issueType}"></td>
+                        <td class="nowrap"><a th:href="${t.link}" target="_blank" rel="noopener" th:text="${t.key}"></a></td>
+                        <td class="summary" th:text="${t.summary}"></td>
+                        <td th:text="${t.usingPrdaApi}"></td>
+                        <td class="nowrap" th:text="${t.parentKey}"></td>
+                        <td th:text="${t.parentSummary}"></td>
+                        <td class="nowrap" th:text="${t.assignee}"></td>
+                        <td class="nowrap" th:text="${t.reporter}"></td>
+                        <td th:text="${#strings.listJoin(t.sprints, ', ')}"></td>
+                        <td><span class="badge" th:classappend="${'cat-' + t.statusCategory}" th:text="${t.status}"></span></td>
+                        <td class="nowrap" th:text="${t.priority}"></td>
+                        <td class="nowrap" th:text="${t.resolution}"></td>
+                        <td class="nowrap" th:text="${t.created}"></td>
+                        <td class="nowrap" th:text="${t.updated}"></td>
+                        <td class="num" th:text="${t.storyPoints}"></td>
+                    </tr>
+                    <tr th:if="${report.tickets.isEmpty()}"><td colspan="16" class="none">Tidak ada tiket untuk JQL ini.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== DevOps Ticket ===== -->
+        <section class="panel" id="tab-devops">
+            <p class="hint" th:if="${devopsTotal == 0}">Belum ada tiket DevOps. Isi <code>app.jira.jql.devops</code> di application.yaml
+                (mis. <code>project = MD AND fixVersion = "{fixVersion}"</code>).</p>
+            <div class="card env-card" th:each="entry : ${report.devops.entrySet()}"
+                 th:with="env=${entry.key}, rows=${entry.value}">
+                <h3 class="env-head" th:classappend="${'env-' + env.toLowerCase()}"
+                    th:text="${(env == 'PROD' ? 'PRODUCTION' : env) + ' ENVIRONMENT · ' + rows.size() + ' tiket'}"></h3>
+                <div class="scroll">
+                    <table class="tbl small">
+                        <thead><tr><th>No</th><th>Ticket</th><th>Repository/Services</th><th>Epic</th><th>Type</th><th>Note</th>
+                            <th th:text="${env == 'SIT' ? 'Need In UAT' : 'Value'}"></th><th th:text="${'Status ' + env}"></th></tr></thead>
+                        <tbody>
+                        <tr th:each="d, it : ${rows}">
+                            <td th:text="${it.count}"></td>
+                            <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
+                            <td th:text="${d.repository}"></td>
+                            <td th:text="${d.epicKey}" th:title="${d.epicSummary}"></td>
+                            <td><span class="type" th:if="${!d.type.isEmpty()}" th:text="${d.type}"></span></td>
+                            <td class="manual">—</td>
+                            <td class="manual">—</td>
+                            <td><span class="badge" th:classappend="${'st-' + #strings.toLowerCase(#strings.replace(d.status, ' ', '-'))}"
+                                      th:text="${d.status}" th:title="${'Status Jira: ' + d.rawStatus}"></span></td>
+                        </tr>
+                        <tr th:if="${rows.isEmpty()}"><td colspan="8" class="none">Tidak ada tiket.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card" th:if="${!report.devopsUnknownEnv.isEmpty()}">
+                <h3>Environment tidak terdeteksi · <span th:text="${report.devopsUnknownEnv.size()}"></span> tiket</h3>
+                <p class="hint">Summary tidak memuat [SIT]/[UAT]/[PROD], jadi tidak masuk blok di atas maupun file Excel.</p>
+                <table class="tbl small">
+                    <thead><tr><th>Ticket</th><th>Repository/Services</th><th>Type</th><th>Status</th></tr></thead>
+                    <tbody>
+                    <tr th:each="d : ${report.devopsUnknownEnv}">
+                        <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
+                        <td th:text="${d.repository}"></td><td th:text="${d.type}"></td><td th:text="${d.rawStatus}"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== DDL Ticket ===== -->
+        <section class="panel" id="tab-ddl">
+            <p class="hint">Kolom bertanda <span class="manual">—</span> diisi manual di Excel (branch, collection, status per environment, rollback, assets).</p>
+            <div class="scroll">
+                <table class="tbl small">
+                    <thead><tr><th>No</th><th>Ticket</th><th>Bitbucket Branch</th><th>Note</th><th>Collections</th><th>Note</th>
+                        <th>Status SIT</th><th>Status UAT</th><th>Already Check/Improve</th><th>Status Prod</th><th>Rollback DDL</th><th>Assets Folder</th></tr></thead>
+                    <tbody>
+                    <tr th:each="d, it : ${report.ddl}">
+                        <td th:text="${it.count}"></td>
+                        <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
+                        <td class="manual" th:each="i : ${#numbers.sequence(1, 10)}">—</td>
+                    </tr>
+                    <tr th:if="${report.ddl.isEmpty()}"><td colspan="12" class="none">Tidak ada tiket DDL.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== Repo Impacted ===== -->
+        <section class="panel" id="tab-repo">
+            <p class="hint">Daftar repository diturunkan otomatis dari tiket DevOps. Status deployment, unit testing, dan PR ke main diisi manual di Excel.</p>
+            <div class="scroll">
+                <table class="tbl small">
+                    <thead>
+                    <tr><th rowspan="2">No</th><th rowspan="2">Repository Related</th><th colspan="3">Status Deployment</th><th colspan="3">Status Unit Testing</th><th rowspan="2">Pull Request To Main</th></tr>
+                    <tr><th>SIT</th><th>UAT</th><th>PROD</th><th>SIT</th><th>UAT</th><th>PROD</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="r, it : ${report.repos}">
+                        <td th:text="${it.count}"></td><td th:text="${r.name}"></td>
+                        <td class="manual" th:each="i : ${#numbers.sequence(1, 7)}">—</td>
+                    </tr>
+                    <tr th:if="${report.repos.isEmpty()}"><td colspan="9" class="none">Belum ada repository terdeteksi.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== Database Related ===== -->
+        <section class="panel" id="tab-db">
+<!--            <div class="card">-->
+<!--                <h3>Collections Related</h3>-->
+<!--                <p class="hint">Daftar collection yang berubah diisi manual pada sheet <strong>Database Related</strong> di Excel. Lihat tab DDL Ticket untuk tiket terkait.</p>-->
+<!--            </div>-->
+            <p class="hint">Kolom bertanda <span class="manual">—</span> Daftar collection yang berubah diisi manual pada sheet <strong>Database Related</strong> di Excel. Lihat tab DDL Ticket untuk tiket terkait.</p>
+            <div class="scroll">
+                <table class="tbl small">
+                    <thead><tr><th>No</th><th>Ticket</th><th>Bitbucket Branch</th><th>Note</th><th>Collections</th><th>Note</th>
+                        <th>Status SIT</th><th>Status UAT</th><th>Already Check/Improve</th><th>Status Prod</th><th>Rollback Database</th><th>Assets Folder</th></tr></thead>
+                    <tbody>
+                    <tr th:each="d, it : ${report.db}">
+                        <td th:text="${it.count}"></td>
+                        <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
+                        <td class="manual" th:each="i : ${#numbers.sequence(1, 10)}">—</td>
+                    </tr>
+                    <tr th:if="${report.ddl.isEmpty()}"><td colspan="12" class="none">Tidak ada tiket DDL.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== Checklist ===== -->
+        <section class="panel" id="tab-checklist">
+            <div class="card">
+                <h3>Checklist (No · Keterangan · Link)</h3>
+                <p class="hint">Butir checklist tambahan diisi manual pada sheet <strong>Checklist</strong> di Excel.</p>
+            </div>
+        </section>
+
+        <!-- ===== Hotfix / Sanity ===== -->
+        <section class="panel" id="tab-hotfix">
+            <table class="tbl small">
+                <thead><tr><th>No</th><th>Ticket</th></tr></thead>
+                <tbody>
+                <tr th:each="h, it : ${report.hotfix}">
+                    <td th:text="${it.count}"></td>
+                    <td><a th:href="${h.link}" target="_blank" rel="noopener" th:text="${h.label}"></a></td>
+                </tr>
+                <tr th:if="${report.hotfix.isEmpty()}"><td colspan="2" class="none">Tidak ada tiket Hotfix/Sanity.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- ===== Agent ===== -->
+        <section class="agent card">
+            <h3>💬 Tanya Release Report Agent</h3>
+            <p class="hint">Agent membaca data report di atas (hanya baca, tidak mengubah Jira). Judul tiket dikirim ke model AI untuk menjawab.</p>
+            <div class="chips">
+                <button type="button" class="chip-btn" data-q="Buat ringkasan release ini untuk manajemen.">Ringkasan untuk manajemen</button>
+                <button type="button" class="chip-btn" data-q="Tiket mana saja yang belum punya story points?">Tiket tanpa story points</button>
+                <button type="button" class="chip-btn" data-q="Apa saja risiko dan hal yang perlu dicek sebelum deploy ke PROD?">Risiko sebelum deploy</button>
+                <button type="button" class="chip-btn" data-q="Rangkum perubahan infrastruktur DevOps (configmap, secret, cronjob) beserta statusnya.">Perubahan DevOps</button>
+            </div>
+            <input type="hidden" id="agent-version" th:value="${report.fixVersion}">
+            <textarea id="agent-q" rows="2" placeholder="Tanya sesuatu tentang release ini…"></textarea>
+            <div class="agent-actions">
+                <button type="button" class="btn primary" id="agent-send">Kirim</button>
+                <button type="button" class="btn" id="agent-reset">Percakapan baru</button>
+            </div>
+            <div class="answer" id="agent-answer" aria-live="polite"></div>
+        </section>
+    </th:block>
+</div>
+<script src="/js/jira-report.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+=== DOKUMEN HASIL GENERATE AI ===
+Peran AI: {{ROLE}}
+Konteks / Permintaan: {{CONTEXT}}
+
+=== BALASAN GEMINI ===
+{{AI_RESPONSE}}

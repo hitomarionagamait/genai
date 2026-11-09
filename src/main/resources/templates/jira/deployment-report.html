@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre-Deployment Checklist | Jira Report</title>
+    <link rel="stylesheet" href="/css/jira-deployment-report.css">
+</head>
+<body>
+<div class="page-shell">
+    <header class="page-header">
+        <div class="header-topline">
+            <a href="/" class="back-link">← Dashboard</a>
+            <span class="eyebrow">ENGINEERING RELEASE CONTROL</span>
+        </div>
+        <div class="header-content">
+            <div>
+                <h1>Pre-Deployment Checklist</h1>
+                <p class="subtitle">Backend release overview · Jira issue report</p>
+            </div>
+            <div class="header-mark">PD</div>
+        </div>
+    </header>
+
+    <main>
+        <section class="filter-panel">
+            <form method="get" action="/jira/deployment-report" class="filter-form">
+                <label for="fixVersion">Fix Version</label>
+                <select id="fixVersion" name="fixVersion" required>
+                    <option value="" th:selected="${#strings.isEmpty(selectedFixVersion)}">-- Pilih Fix Version --</option>
+                    <option th:each="version : ${versions}"
+                            th:value="${version.name}"
+                            th:text="${version.name + (version.archived ? ' · Archived' : (version.released ? ' · Released' : ''))}"
+                            th:selected="${version.name == selectedFixVersion}"></option>
+                </select>
+                <button type="submit" class="primary-button">Generate Report <span>↗</span></button>
+            </form>
+            <div class="filter-meta">
+                <span>Source: Jira Cloud REST API v3</span>
+                <span>Sort: Created DESC</span>
+                <span th:if="${report != null}" th:text="'Generated: ' + ${report.generatedAt}">Generated: —</span>
+            </div>
+        </section>
+
+        <div class="notice error-notice" th:if="${jiraError != null}" th:text="${jiraError}"></div>
+        <div class="notice error-notice" th:if="${reportError != null}" th:text="${reportError}"></div>
+
+        <section th:if="${report != null}" class="report-content">
+            <div class="report-heading">
+                <div>
+                    <span class="eyebrow">RELEASE SNAPSHOT</span>
+                    <h2 th:text="'Backend · ' + ${report.fixVersion}">Backend · v2.15.0</h2>
+                </div>
+                <div class="report-heading-actions">
+                    <span class="total-pill"><strong th:text="${report.totalIssues}">0</strong> issues matched</span>
+                    <a class="export-button"
+                       th:href="@{/jira/deployment-report/export(fixVersion=${report.fixVersion})}">
+                        <span aria-hidden="true">↓</span> Download Excel Template
+                    </a>
+                </div>
+            </div>
+
+            <section class="kpi-grid" aria-label="Report summary">
+                <article class="kpi-card">
+                    <span class="kpi-label">Total Tickets</span>
+                    <strong th:text="${report.totalIssues}">0</strong>
+                    <span class="kpi-foot">Matching JQL</span>
+                </article>
+                <article class="kpi-card">
+                    <span class="kpi-label">Repositories</span>
+                    <strong th:text="${report.repoCount}">0</strong>
+                    <span class="kpi-foot">Unique repository names</span>
+                </article>
+                <article class="kpi-card">
+                    <span class="kpi-label">DevOps Tickets</span>
+                    <strong th:text="${report.devOpsCount}">0</strong>
+                    <span class="kpi-foot">SIT / UAT / Production / Unspecified</span>
+                </article>
+                <article class="kpi-card">
+                    <span class="kpi-label">Database Related</span>
+                    <strong th:text="${report.databaseCount}">0</strong>
+                    <span class="kpi-foot">Database / collection / schema</span>
+                </article>
+                <article class="kpi-card">
+                    <span class="kpi-label">DDL Tickets</span>
+                    <strong th:text="${report.ddlCount}">0</strong>
+                    <span class="kpi-foot">DDL / migration / rollback</span>
+                </article>
+                <article class="kpi-card">
+                    <span class="kpi-label">Hotfix / Sanity</span>
+                    <strong th:text="${report.hotfixSanityCount}">0</strong>
+                    <span class="kpi-foot">Detected from summary / labels</span>
+                </article>
+            </section>
+
+            <section class="query-card">
+                <div class="query-title"><span class="query-dot"></span> Query Jira yang digunakan</div>
+                <code th:text="${report.jql}">"Platform[Dropdown]" = Backend AND fixVersion = "v2.15.0" AND worktype != Bug AND status = Done ORDER BY created DESC</code>
+            </section>
+
+            <nav class="tab-nav" aria-label="Checklist sections">
+                <button type="button" class="tab-button active" data-tab="checklist">Checklist</button>
+                <button type="button" class="tab-button" data-tab="repo">Repo Impacted</button>
+                <button type="button" class="tab-button" data-tab="devops">DevOps Ticket</button>
+                <button type="button" class="tab-button" data-tab="database">Database Related</button>
+                <button type="button" class="tab-button" data-tab="ddl">DDL Ticket</button>
+                <button type="button" class="tab-button" data-tab="all-ticket">All Ticket</button>
+                <button type="button" class="tab-button" data-tab="hotfix">Hotfix OR Sanity</button>
+            </nav>
+
+            <section id="tab-checklist" class="tab-panel active">
+                <div class="section-heading"><div><h3>Checklist</h3><p>Issue yang masuk ke scope pre-deployment.</p></div><span class="count-label" th:text="${#lists.size(report.checklistRows)} + ' items'">0 items</span></div>
+                <div class="table-wrap">
+                    <table><thead><tr><th>No</th><th>Keterangan</th><th>Link</th></tr></thead>
+                        <tbody>
+                        <tr th:each="row : ${report.checklistRows}"><td th:text="${row.no}"></td><td class="text-cell" th:text="${row.description}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.checklistRows)}"><td colspan="3" class="empty-cell">Tidak ada ticket yang sesuai JQL.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="tab-repo" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>Repo Impacted</h3><p>Repository diambil dari custom field Repository/Services atau Jira Components.</p></div><span class="count-label" th:text="${#lists.size(report.repoImpactedRows)} + ' rows'">0 rows</span></div>
+                <div class="table-wrap">
+                    <table><thead><tr><th rowspan="2">No</th><th rowspan="2">Repository Related</th><th colspan="3">Status Deployment</th><th colspan="3">Status Unit Testing</th><th rowspan="2">Pull Request To Main</th></tr><tr><th>SIT</th><th>UAT</th><th>PROD</th><th>SIT</th><th>UAT</th><th>PROD</th></tr></thead>
+                        <tbody><tr th:each="row : ${report.repoImpactedRows}"><td th:text="${row.no}"></td><td class="text-cell" th:text="${row.repository}"></td><td th:text="${row.deploymentSit}"></td><td th:text="${row.deploymentUat}"></td><td th:text="${row.deploymentProd}"></td><td th:text="${row.unitTestingSit}"></td><td th:text="${row.unitTestingUat}"></td><td th:text="${row.unitTestingProd}"></td><td th:text="${row.pullRequestToMain}"></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.repoImpactedRows)}"><td colspan="9" class="empty-cell">Belum ada repository yang terpetakan.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="tab-devops" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>DevOps Ticket</h3><p>Auto-classification dari ticket type, summary, labels, dan field Environment.</p></div><span class="count-label" th:text="${report.devOpsCount} + ' tickets'">0 tickets</span></div>
+                <div class="devops-block">
+                    <div class="subsection-heading"><h4>SIT ENVIRONMENT</h4><span class="count-label" th:text="${#lists.size(report.sitDevOpsRows)} + ' tickets'">0 tickets</span></div>
+                    <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th><th>Repository / Services</th><th>Epic</th><th>Type</th><th>Note</th><th>Need In UAT</th><th>Status</th></tr></thead><tbody>
+                        <tr th:each="row : ${report.sitDevOpsRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td><td th:text="${row.repository}"></td><td th:text="${row.epic}"></td><td th:text="${row.type}"></td><td class="text-cell" th:text="${row.note}"></td><td th:text="${row.needInUat}"></td><td th:text="${row.status}"></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.sitDevOpsRows)}"><td colspan="8" class="empty-cell">Tidak ada data.</td></tr>
+                    </tbody></table></div>
+                </div>
+                <div class="devops-block">
+                    <div class="subsection-heading"><h4>UAT ENVIRONMENT</h4><span class="count-label" th:text="${#lists.size(report.uatDevOpsRows)} + ' tickets'">0 tickets</span></div>
+                    <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th><th>Repository / Services</th><th>Epic</th><th>Type</th><th>Note</th><th>Need In UAT</th><th>Status</th></tr></thead><tbody>
+                        <tr th:each="row : ${report.uatDevOpsRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td><td th:text="${row.repository}"></td><td th:text="${row.epic}"></td><td th:text="${row.type}"></td><td class="text-cell" th:text="${row.note}"></td><td th:text="${row.needInUat}"></td><td th:text="${row.status}"></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.uatDevOpsRows)}"><td colspan="8" class="empty-cell">Tidak ada data.</td></tr>
+                    </tbody></table></div>
+                </div>
+                <div class="devops-block">
+                    <div class="subsection-heading"><h4>PRODUCTION ENVIRONMENT</h4><span class="count-label" th:text="${#lists.size(report.productionDevOpsRows)} + ' tickets'">0 tickets</span></div>
+                    <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th><th>Repository / Services</th><th>Epic</th><th>Type</th><th>Note</th><th>Need In UAT</th><th>Status</th></tr></thead><tbody>
+                        <tr th:each="row : ${report.productionDevOpsRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td><td th:text="${row.repository}"></td><td th:text="${row.epic}"></td><td th:text="${row.type}"></td><td class="text-cell" th:text="${row.note}"></td><td th:text="${row.needInUat}"></td><td th:text="${row.status}"></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.productionDevOpsRows)}"><td colspan="8" class="empty-cell">Tidak ada data.</td></tr>
+                    </tbody></table></div>
+                </div>
+                <div class="devops-block">
+                    <div class="subsection-heading"><h4>ENVIRONMENT NOT MAPPED</h4><span class="count-label" th:text="${#lists.size(report.unclassifiedDevOpsRows)} + ' tickets'">0 tickets</span></div>
+                    <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th><th>Repository / Services</th><th>Epic</th><th>Type</th><th>Note</th><th>Need In UAT</th><th>Status</th></tr></thead><tbody>
+                        <tr th:each="row : ${report.unclassifiedDevOpsRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td><td th:text="${row.repository}"></td><td th:text="${row.epic}"></td><td th:text="${row.type}"></td><td class="text-cell" th:text="${row.note}"></td><td th:text="${row.needInUat}"></td><td th:text="${row.status}"></td></tr>
+                        <tr th:if="${#lists.isEmpty(report.unclassifiedDevOpsRows)}"><td colspan="8" class="empty-cell">Tidak ada data.</td></tr>
+                    </tbody></table></div>
+                </div>
+            </section>
+
+            <section id="tab-database" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>Database Related</h3><p>Database, collection, MongoDB, schema, index, migration, dan DDL references.</p></div><span class="count-label" th:text="${#lists.size(report.databaseRows)} + ' items'">0 items</span></div>
+                <div class="table-wrap"><table><thead><tr><th>No</th><th>Collections Related</th><th>Ticket</th></tr></thead><tbody>
+                    <tr th:each="row : ${report.databaseRows}"><td th:text="${row.no}"></td><td class="text-cell" th:text="${row.collectionsRelated}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td></tr>
+                    <tr th:if="${#lists.isEmpty(report.databaseRows)}"><td colspan="3" class="empty-cell">Tidak ada database-related ticket terdeteksi.</td></tr>
+                </tbody></table></div>
+            </section>
+
+            <section id="tab-ddl" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>DDL Ticket</h3><p>Detail branch, collection, status environment, rollback, dan assets apabila field Jira tersedia.</p></div><span class="count-label" th:text="${#lists.size(report.ddlRows)} + ' items'">0 items</span></div>
+                <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th><th>Bitbucket Branch</th><th>Note</th><th>Collections</th><th>Collection Note</th><th>Status SIT</th><th>Status UAT</th><th>Already Check / Improve</th><th>Status Prod</th><th>Rollback DDL</th><th>Assets Folder</th></tr></thead><tbody>
+                    <tr th:each="row : ${report.ddlRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td><td th:text="${row.bitbucketBranch}"></td><td class="text-cell" th:text="${row.note}"></td><td class="text-cell" th:text="${row.collections}"></td><td class="text-cell" th:text="${row.collectionNote}"></td><td th:text="${row.statusSit}"></td><td th:text="${row.statusUat}"></td><td th:text="${row.alreadyCheckImprove}"></td><td th:text="${row.statusProd}"></td><td th:text="${row.rollbackDdl}"></td><td th:text="${row.assetsFolder}"></td></tr>
+                    <tr th:if="${#lists.isEmpty(report.ddlRows)}"><td colspan="12" class="empty-cell">Tidak ada DDL ticket terdeteksi.</td></tr>
+                </tbody></table></div>
+            </section>
+
+            <section id="tab-all-ticket" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>All Ticket</h3><p>Semua issue hasil JQL beserta metadata Jira yang tersedia.</p></div><span class="count-label" th:text="${#lists.size(report.allTicketRows)} + ' tickets'">0 tickets</span></div>
+                <div class="table-wrap"><table class="wide-table"><thead><tr>
+                    <th>No</th><th>Issue Type</th><th>Issue Key</th><th>Link Ticket</th><th>Summary</th><th>Using PRDA API?</th><th>Parent Key</th><th>Parent Summary</th><th>Assignee</th><th>Assignee Id</th><th>Reporter</th><th>Reporter Id</th><th>Sprint 1</th><th>Sprint 2</th><th>Sprint 3</th><th>Sprint 4</th><th>Sprint 5</th><th>Status</th><th>Priority</th><th>Resolution</th><th>Created</th><th>Updated</th><th>Story Points</th>
+                </tr></thead><tbody>
+                    <tr th:each="row : ${report.allTicketRows}"><td th:text="${row.no}"></td><td th:text="${row.issueType}"></td><td th:text="${row.issueKey}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener">Open</a></td><td class="text-cell summary-cell" th:text="${row.summary}"></td><td th:text="${row.usingPrdaApi}"></td><td th:text="${row.parentKey}"></td><td class="text-cell" th:text="${row.parentSummary}"></td><td th:text="${row.assignee}"></td><td th:text="${row.assigneeId}"></td><td th:text="${row.reporter}"></td><td th:text="${row.reporterId}"></td><td th:text="${row.sprint1}"></td><td th:text="${row.sprint2}"></td><td th:text="${row.sprint3}"></td><td th:text="${row.sprint4}"></td><td th:text="${row.sprint5}"></td><td th:text="${row.status}"></td><td th:text="${row.priority}"></td><td th:text="${row.resolution}"></td><td th:text="${row.created}"></td><td th:text="${row.updated}"></td><td th:text="${row.storyPoints}"></td></tr>
+                    <tr th:if="${#lists.isEmpty(report.allTicketRows)}"><td colspan="23" class="empty-cell">Tidak ada ticket yang sesuai JQL.</td></tr>
+                </tbody></table></div>
+            </section>
+
+            <section id="tab-hotfix" class="tab-panel" hidden>
+                <div class="section-heading"><div><h3>Hotfix OR Sanity Tickets</h3><p>Ticket dengan kata kunci Hotfix / Hot-fix / Sanity pada summary atau labels.</p></div><span class="count-label" th:text="${#lists.size(report.hotfixSanityRows)} + ' tickets'">0 tickets</span></div>
+                <div class="table-wrap"><table><thead><tr><th>No</th><th>Ticket</th></tr></thead><tbody>
+                    <tr th:each="row : ${report.hotfixSanityRows}"><td th:text="${row.no}"></td><td><a class="ticket-link" th:href="${row.ticketUrl}" target="_blank" rel="noopener" th:text="${row.issueKey}"></a></td></tr>
+                    <tr th:if="${#lists.isEmpty(report.hotfixSanityRows)}"><td colspan="2" class="empty-cell">Tidak ada hotfix / sanity ticket terdeteksi.</td></tr>
+                </tbody></table></div>
+            </section>
+
+            <p class="footnote">Catatan: kolom status deployment, unit testing, PR, rollback, dan assets akan kosong jika belum disimpan sebagai Jira field. Klasifikasi tab selain All Ticket menggunakan heuristik nama ticket dan custom field sehingga perlu diverifikasi sebelum deployment.</p>
+        </section>
+    </main>
+    <footer>Backend Engineering · Pre-Deployment Report</footer>
+</div>
+
+<script src="/js/jira-deployment-report.js"></script>
+</body>
+</html>
