@@ -54,11 +54,27 @@ bitbucket:
 spring:
   application:
     name: genai
+#  security:
+#    user:
+#      name:
+#      password:
+#      roles: ADMIN
   security:
-    user:
-      name:
-      password:
-      roles: ADMIN
+    # false = hanya login Google/Bitbucket (disarankan di produksi)
+    local-login-enabled: ${APP_LOCAL_LOGIN:true}
+    # Allowlist login sosial (pisahkan dengan koma). Semua kosong = SEMUA login sosial ditolak.
+    allowed-emails: ${APP_ALLOWED_EMAILS:}
+    allowed-domains: ${APP_ALLOWED_DOMAINS:}
+    # Slug workspace Bitbucket yang anggotanya boleh masuk lewat login Bitbucket
+    allowed-bitbucket-workspaces: ${APP_ALLOWED_BITBUCKET_WORKSPACES:}
+    admin-emails: ${APP_ADMIN_EMAILS:}
+    require-email-verified: true
+    pkce-providers: google
+    # report-only = hanya mencatat pelanggaran di console browser; ganti ke enforce setelah semua halaman bersih
+    csp-mode: ${APP_CSP_MODE:report-only}
+    max-login-attempts: 5
+    lockout-minutes: 15
+
   ai:
     # 1. Konfigurasi Google GenAI (Gemini)
     google:

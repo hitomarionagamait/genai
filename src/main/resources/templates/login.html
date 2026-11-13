@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="id" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masuk - GenAI</title>
+    <link rel="stylesheet" href="/css/login.css">
+</head>
+<body class="loginpage">
+<main class="logincard">
+    <h1>GenAI Workspace</h1>
+    <p class="muted">Masuk untuk melanjutkan</p>
+
+    <div class="msg ok" th:if="${loggedOut}">Anda sudah keluar.</div>
+    <div class="msg err" th:if="${errorMessage != null}" th:text="${errorMessage}" role="alert"></div>
+
+    <div class="sso-list" th:if="${!providers.isEmpty()}">
+        <a class="sso" th:each="p : ${providers}" th:href="${p.url}" th:classappend="${'sso-' + p.id}">
+            <span class="ico" th:text="${#strings.substring(p.name, 0, 1)}"></span>
+            <span th:text="${'Masuk dengan ' + p.name}"></span>
+        </a>
+        <p class="muted small">Hanya akun yang diizinkan administrator yang dapat masuk.</p>
+    </div>
+
+    <div class="divider" th:if="${!providers.isEmpty() and localLogin}"><span>atau</span></div>
+
+    <form th:if="${localLogin}" th:action="@{/login}" method="post" class="localform" autocomplete="on">
+        <label>Username
+            <input type="text" name="username" autocomplete="username" required autofocus>
+        </label>
+        <label>Password
+            <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn-primary">Masuk</button>
+    </form>
+</main>
+</body>
+</html>

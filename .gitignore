@@ -48,8 +48,10 @@ build/
 !**/src/test/**/build/
 
 ### Security ###
-application.yaml
 application.yml
+application.yaml
+application-google.yaml
+application-bitbucket.yaml
 application.properties
 application-dev.yaml
 application-prod.yaml

@@ -1,0 +1,11 @@
+# Aktifkan dengan: SPRING_PROFILES_ACTIVE=google   (butuh GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET)
+# Redirect URI yang didaftarkan di Google Cloud Console: {BASE_URL}/login/oauth2/code/google
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id:
+            client-secret:
+            scope: openid,profile,email

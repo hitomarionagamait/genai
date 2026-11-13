@@ -1,0 +1,29 @@
+# Aktifkan dengan: SPRING_PROFILES_ACTIVE=bitbucket   (butuh BITBUCKET_CLIENT_ID dan BITBUCKET_CLIENT_SECRET)
+# Bitbucket Cloud memakai OAuth 2.0 biasa (BUKAN OpenID Connect). Buat "OAuth consumer" di
+# Workspace settings > OAuth consumers dengan:
+#   - Callback URL : {BASE_URL}/login/oauth2/code/bitbucket   (hanya satu callback per consumer)
+#   - Permissions  : Account: Read, Email: Read, dan Workspace membership: Read (bila ada pada consumer)
+#   - "This is a private consumer" dicentang
+# Scope ditentukan oleh izin consumer di atas; parameter scope pada request diabaikan Bitbucket,
+# karena itu scope sengaja tidak diisi di sini.
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          bitbucket:
+            provider: bitbucket
+            client-name: Bitbucket
+            client-id: ${BITBUCKET_CLIENT_ID}
+            client-secret: ${BITBUCKET_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            client-authentication-method: client_secret_basic
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          bitbucket:
+            authorization-uri: https://bitbucket.org/site/oauth2/authorize
+            token-uri: https://bitbucket.org/site/oauth2/access_token
+            # Profil, email, dan workspace diambil oleh BitbucketProfileClient (api.bitbucket.org/2.0),
+            # bukan oleh user-info-uri bawaan Spring.
+            user-info-uri: https://api.bitbucket.org/2.0/user
+            user-name-attribute: account_id
