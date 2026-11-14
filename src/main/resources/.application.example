@@ -33,8 +33,12 @@ jira:
     devops: '"Application[Dropdown]"="Cluster UBP" and "Apps Version[Dropdown]"={fixVersionShort} order by created DESC'
     # Kosong = diturunkan dari All Ticket (summary memuat "DDL")
     ddl: ''
+    # Kosong = diturunkan dari All Ticket (summary memuat "Collection")
+    db: ''
     # Kosong = diturunkan dari All Ticket (summary memuat hotfix / sanity)
     hotfix: ''
+    # Tab Bugs Development / UAT; {fixVersion} mengikuti versi yang dipilih.
+    bugs-development-uat: 'project = "Prodia Digital" AND affectedVersion = {fixVersion} AND "Platform[Dropdown]" = Backend ORDER BY createdDate DESC'
   # Nama field Jira; ID customfield dicari otomatis. Isi *-id hanya bila perlu memaksa ID tertentu.
   field-names:
     story-points: Story Points,Story point estimate
@@ -45,6 +49,43 @@ jira:
     max-issues: 2000
     critical-priorities: Highest,Critical,Blocker,High
     aging-days: 14
+# Repository branch quality report: Bitbucket branch/pipeline + SonarQube metrics
+repository:
+  quality:
+    enabled: ${REPOSITORY_QUALITY_ENABLED:true}
+    bitbucket:
+      base-url: https://api.bitbucket.org/2.0
+      workspace: ${BITBUCKET_WORKSPACE:}
+      # Uses the same read-only workspace/repository token as BitbucketService if available.
+      token: ${BITBUCKET_API_TOKEN:${bitbucket.api.token:}}
+      max-branch-pages: ${BITBUCKET_MAX_BRANCH_PAGES:20}
+      pipeline-lookback: ${BITBUCKET_PIPELINE_LOOKBACK:20}
+      # Default matches explicit pipeline step names such as "Unit Test" / "Unit-Test".
+      # Override with BITBUCKET_UNIT_TEST_STEP_PATTERN if your pipeline uses another step name.
+      unit-test-step-pattern: '${BITBUCKET_UNIT_TEST_STEP_PATTERN:(?i).*(unit.?test|unittest|testing).*}'
+    sonar:
+      base-url: ${SONAR_BASE_URL:}
+      token: ${SONAR_TOKEN:}
+      # Map Bitbucket repository slug to the exact SonarQube project key when they differ.
+      project-keys: {}
+      # Example:
+      # project-keys:
+      #   prdi-order-service: PRDI_Order_Service
+    whitelist:
+      file: ${REPOSITORY_COVERAGE_WHITELIST_FILE:./data/repository-coverage-whitelist.txt}
+    environments:
+      sit:
+        # Dropdown SIT dibatasi ke dua branch ini; aplikasi tidak melakukan listing seluruh branch Bitbucket.
+        branch: ${SIT_TARGET_BRANCH:develop-support}
+        branches:
+          - develop
+          - develop-support
+        selectable: true
+      uat:
+        branch-pattern: release/{fixVersion}
+      prod:
+        branch: main
+
 bitbucket:
   api:
     token:

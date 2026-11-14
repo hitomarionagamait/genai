@@ -1,0 +1,15 @@
+backend-api
+backendapi-healthplans
+backendapi-loyalty
+backendapi-nutritions
+backendapi-payment
+backendapi-recommengine
+prdi-cdm-service
+prdi-doctor-service
+prdi-general-service
+prdi-labtest-service
+prdi-order-service
+prdi-rating-service
+prdi-wearable-service
+prdi-patient-management
+prodia-api

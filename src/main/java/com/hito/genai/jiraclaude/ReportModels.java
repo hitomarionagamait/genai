@@ -15,7 +15,7 @@ public final class ReportModels {
                          String parentKey, String parentSummary, String assignee, String assigneeId,
                          String reporter, String reporterId, List<String> sprints, String status,
                          String statusCategory, String priority, String resolution, String created,
-                         String updated, Double storyPoints) {
+                         String updated, Double storyPoints, List<String> labels) {
         public String label() {
             return "[" + key + "] " + summary;
         }
@@ -28,12 +28,14 @@ public final class ReportModels {
 
     /** branches/prSummary diisi dari panel Development bila tersedia. */
     public record DdlRow(String key, String link, String label, String assignee, String rawStatus,
-                         List<String> branches, String prSummary) {
+                         List<String> branches, String prSummary,
+                         String sitBranch, String uatBranch, String prodBranch) {
     }
 
-    /** branches/prSummary diisi dari panel Development bila tersedia. */
+    /** Branch release backendapi-ddl yang ditautkan pada panel Development Jira. */
     public record DatabaseRow(String key, String link, String label, String assignee, String rawStatus,
-                         List<String> branches, String prSummary) {
+                         List<String> branches, String prSummary,
+                         String sitBranch, String uatBranch, String prodBranch) {
     }
 
     public record HotfixRow(String key, String link, String label) {
@@ -128,7 +130,8 @@ public final class ReportModels {
 
     public record Report(String fixVersion, Instant generatedAt, List<Section> sections, List<Ticket> tickets,
                          Map<String, List<DevOpsRow>> devops, List<DevOpsRow> devopsUnknownEnv,
-                         List<DdlRow> ddl, List<DatabaseRow> db, List<HotfixRow> hotfix, List<RepoRow> repos, Summary summary,
+                         List<DdlRow> ddl, List<DatabaseRow> db, List<HotfixRow> hotfix,
+                         List<Ticket> bugsDevelopmentUat, List<RepoRow> repos, Summary summary,
                          List<String> warnings, Map<String, DevInfo> development, DevSummary dev) {
     }
 

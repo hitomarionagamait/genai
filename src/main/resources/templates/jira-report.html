@@ -7,6 +7,23 @@
     <link rel="stylesheet" href="/css/jira-report.css">
 </head>
 <body>
+<div id="report-loading" class="loading-overlay" hidden role="status" aria-live="polite" aria-label="Memuat report Jira">
+    <div class="loading-card">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <strong>Memuat Jira Report…</strong>
+        <span>Menarik tiket, branch, dan status pipeline dari Jira/Bitbucket.</span>
+        <div class="loading-track"><i></i></div>
+    </div>
+</div>
+<div id="excel-download-loading" class="loading-overlay" hidden role="status" aria-live="polite" aria-label="Menyiapkan download Excel">
+    <div class="loading-card">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <strong id="excel-download-title">Menyiapkan file Excel…</strong>
+        <span id="excel-download-message">Mengumpulkan data Jira dan Bitbucket serta menyusun workbook.</span>
+        <div id="excel-download-track" class="loading-track indeterminate"><i id="excel-download-progress"></i></div>
+        <span id="excel-download-percent" class="loading-percent">Sedang memproses…</span>
+    </div>
+</div>
 <div class="wrap">
 
     <header class="top">
@@ -16,7 +33,7 @@
     </header>
 
     <!-- ===== Pemilih fixVersion ===== -->
-    <form class="toolbar" method="get" th:action="@{/jira-report}" th:if="${configured}">
+    <form class="toolbar" id="report-form" method="get" th:action="@{/jira-report}" th:if="${configured}">
         <label class="field">
             <span>fixVersion</span>
             <select name="fixVersion" id="fixVersion"
@@ -35,10 +52,27 @@
             <input type="text" name="fixVersion" id="fixVersion" placeholder="mis. v2.15.0" th:value="${selected}"
                    th:unless="${hasProjectKeys and versionsError == null and (!unreleased.isEmpty() or !released.isEmpty())}">
         </label>
-        <button class="btn primary" type="submit">Tampilkan</button>
-        <button class="btn" type="submit" name="refresh" value="true" title="Abaikan cache dan tarik ulang dari Jira">↻ Ambil ulang dari Jira</button>
-        <a class="btn accent" th:if="${report != null}"
-           th:href="@{/jira-report/export(fixVersion=${report.fixVersion})}">⬇ Download Excel (template)</a>
+        <label class="field" th:if="${!targetBranches.isEmpty()}">
+            <span>Target Branch SIT</span>
+            <select name="sitBranch" id="sitBranch">
+                <option th:each="branch : ${targetBranches}" th:value="${branch}"
+                        th:text="${branch}" th:selected="${branch == sitBranch}"></option>
+            </select>
+        </label>
+        <label class="field" th:if="${targetBranches.isEmpty()}">
+            <span>Target Branch SIT</span>
+            <input type="text" name="sitBranch" id="sitBranch" placeholder="mis. develop-support"
+                   th:value="${sitBranch}" />
+        </label>
+        <div class="field" th:if="${report != null}">
+            <span>Target Branch UAT / PROD</span>
+            <div class="hint">UAT: <strong th:text="${uatBranch}"></strong> · PROD: <strong>main</strong> (otomatis)</div>
+        </div>
+        <input type="hidden" id="report-refresh-flag" name="refresh" value="false">
+        <button class="btn primary" type="submit" data-refresh="false">Tampilkan</button>
+        <button class="btn" type="submit" data-refresh="true" title="Segarkan daftar fixVersion dan tarik ulang report dari Jira">↻ Ambil ulang dari Jira</button>
+        <a class="btn accent" data-excel-download th:if="${report != null}"
+           th:href="@{/jira-report/export(fixVersion=${report.fixVersion},sitBranch=${sitBranch})}">⬇ Download Excel (template)</a>
     </form>
 
     <!-- ===== Banner ===== -->
@@ -64,12 +98,13 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
 
         <div class="meta">
             <span class="chip big" th:text="${report.fixVersion}"></span>
-            <span>diambil <strong th:text="${generatedAtText}"></strong> · cache singkat, gunakan “Ambil ulang” untuk data terbaru</span>
+            <span>diambil <strong th:text="${generatedAtText}"></strong> · data report diambil langsung dari Jira saat halaman dimuat</span>
         </div>
 
         <ul class="warnings" th:if="${!report.warnings.isEmpty()}">
             <li th:each="w : ${report.warnings}" th:text="${w}"></li>
         </ul>
+        <div class="banner" th:if="${whitelistMessage != null}" th:text="${whitelistMessage}"></div>
 
         <details class="jql">
             <summary>JQL yang dipakai (<span th:text="${report.sections.size()}"></span> sumber)</summary>
@@ -100,6 +135,7 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
             <button type="button" data-tab="ddl">DDL Ticket <span class="count" th:text="${report.ddl.size()}"></span></button>
             <button type="button" data-tab="repo">Repo Impacted <span class="count" th:text="${report.repos.size()}"></span></button>
             <button type="button" data-tab="db">Database Related <span class="count" th:text="${report.db.size()}"></span></button>
+            <button type="button" data-tab="bugs-development-uat">Bugs Development / UAT <span class="count" th:text="${report.bugsDevelopmentUat.size()}"></span></button>
             <button type="button" data-tab="checklist">Checklist</button>
             <button type="button" data-tab="hotfix">Hotfix OR Sanity <span class="count" th:text="${report.hotfix.size()}"></span></button>
         </nav>
@@ -149,7 +185,7 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
                 </div>
                 <div class="card wide">
                     <h3>Status Tiket DevOps per Environment</h3>
-                    <table class="tbl small">
+                    <table class="tbl small" data-paginate="true">
                         <thead><tr><th>Environment</th><th>Total</th><th>SUCCESS</th><th>ON PROGRESS</th><th>FAILED</th></tr></thead>
                         <tbody>
                         <tr th:each="e : ${envStats}">
@@ -176,12 +212,12 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
                 <span class="hint" id="all-visible"></span>
             </div>
             <div class="scroll">
-                <table class="tbl" id="all-table">
+                <table class="tbl" id="all-table" data-paginate="true">
                     <thead>
                     <tr>
                         <th>No</th><th>Issue Type</th><th>Issue key</th><th>Summary</th><th>Using PRDA API?</th>
                         <th>Parent key</th><th>Parent summary</th><th>Assignee</th><th>Reporter</th><th>Sprint</th>
-                        <th>Status</th><th>Priority</th><th>Resolution</th><th>Created</th><th>Updated</th><th>SP</th>
+                        <th>Status</th><th>Priority</th><th>Resolution</th><th>Created</th><th>Updated</th><th>SP</th><th>Labels</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -202,8 +238,9 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
                         <td class="nowrap" th:text="${t.created}"></td>
                         <td class="nowrap" th:text="${t.updated}"></td>
                         <td class="num" th:text="${t.storyPoints}"></td>
+                        <td class="labels-cell" th:text="${#strings.listJoin(t.labels, ', ')}"></td>
                     </tr>
-                    <tr th:if="${report.tickets.isEmpty()}"><td colspan="16" class="none">Tidak ada tiket untuk JQL ini.</td></tr>
+                    <tr th:if="${report.tickets.isEmpty()}"><td colspan="17" class="none">Tidak ada tiket untuk JQL ini.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -218,7 +255,7 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
                 <h3 class="env-head" th:classappend="${'env-' + env.toLowerCase()}"
                     th:text="${(env == 'PROD' ? 'PRODUCTION' : env) + ' ENVIRONMENT · ' + rows.size() + ' tiket'}"></h3>
                 <div class="scroll">
-                    <table class="tbl small">
+                    <table class="tbl small" data-paginate="true">
                         <thead><tr><th>No</th><th>Ticket</th><th>Repository/Services</th><th>Epic</th><th>Type</th><th>Note</th>
                             <th th:text="${env == 'SIT' ? 'Need In UAT' : 'Value'}"></th><th th:text="${'Status ' + env}"></th></tr></thead>
                         <tbody>
@@ -241,7 +278,7 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
             <div class="card" th:if="${!report.devopsUnknownEnv.isEmpty()}">
                 <h3>Environment tidak terdeteksi · <span th:text="${report.devopsUnknownEnv.size()}"></span> tiket</h3>
                 <p class="hint">Summary tidak memuat [SIT]/[UAT]/[PROD], jadi tidak masuk blok di atas maupun file Excel.</p>
-                <table class="tbl small">
+                <table class="tbl small" data-paginate="true">
                     <thead><tr><th>Ticket</th><th>Repository/Services</th><th>Type</th><th>Status</th></tr></thead>
                     <tbody>
                     <tr th:each="d : ${report.devopsUnknownEnv}">
@@ -257,14 +294,36 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
         <section class="panel" id="tab-ddl">
             <p class="hint">Kolom bertanda <span class="manual">—</span> diisi manual di Excel (branch, collection, status per environment, rollback, assets).</p>
             <div class="scroll">
-                <table class="tbl small">
+                <table class="tbl small" data-paginate="true">
                     <thead><tr><th>No</th><th>Ticket</th><th>Bitbucket Branch</th><th>Note</th><th>Collections</th><th>Note</th>
                         <th>Status SIT</th><th>Status UAT</th><th>Already Check/Improve</th><th>Status Prod</th><th>Rollback DDL</th><th>Assets Folder</th></tr></thead>
                     <tbody>
                     <tr th:each="d, it : ${report.ddl}">
                         <td th:text="${it.count}"></td>
                         <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
-                        <td class="manual" th:each="i : ${#numbers.sequence(1, 10)}">—</td>
+                        <td th:text="${'SIT: ' + (databasePipelines.sit.branch == null or databasePipelines.sit.branch.isBlank() ? d.sitBranch : databasePipelines.sit.branch) + ' | UAT: ' + (databasePipelines.uat.branch == null or databasePipelines.uat.branch.isBlank() ? d.uatBranch : databasePipelines.uat.branch) + ' | PROD: ' + (databasePipelines.prod.branch == null or databasePipelines.prod.branch.isBlank() ? d.prodBranch : databasePipelines.prod.branch)}"
+                            th:title="${d.prSummary}"></td>
+                        <td th:text="${#strings.isEmpty(d.prSummary) ? '—' : d.prSummary}"></td>
+                        <td class="manual">—</td>
+                        <td class="manual">—</td>
+                        <td class="pipeline-neutral" th:classappend="${databasePipelines.sit.success ? ' pipeline-success' : (databasePipelines.sit.failed ? ' pipeline-failed' : (databasePipelines.sit.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.sit.branch + ' | ' + databasePipelines.sit.note}">
+                            <a th:if="${databasePipelines.sit.url != null and !databasePipelines.sit.url.isBlank()}" th:href="${databasePipelines.sit.url}" target="_blank" rel="noopener" th:text="${databasePipelines.sit.displayStatus()}"></a>
+                            <span th:unless="${databasePipelines.sit.url != null and !databasePipelines.sit.url.isBlank()}" th:text="${databasePipelines.sit.displayStatus()}"></span>
+                        </td>
+                        <td class="pipeline-neutral" th:classappend="${databasePipelines.uat.success ? ' pipeline-success' : (databasePipelines.uat.failed ? ' pipeline-failed' : (databasePipelines.uat.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.uat.branch + ' | ' + databasePipelines.uat.note}">
+                            <a th:if="${databasePipelines.uat.url != null and !databasePipelines.uat.url.isBlank()}" th:href="${databasePipelines.uat.url}" target="_blank" rel="noopener" th:text="${databasePipelines.uat.displayStatus()}"></a>
+                            <span th:unless="${databasePipelines.uat.url != null and !databasePipelines.uat.url.isBlank()}" th:text="${databasePipelines.uat.displayStatus()}"></span>
+                        </td>
+                        <td class="manual">—</td>
+                        <td class="pipeline-neutral" th:classappend="${databasePipelines.prod.success ? ' pipeline-success' : (databasePipelines.prod.failed ? ' pipeline-failed' : (databasePipelines.prod.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.prod.branch + ' | ' + databasePipelines.prod.note}">
+                            <a th:if="${databasePipelines.prod.url != null and !databasePipelines.prod.url.isBlank()}" th:href="${databasePipelines.prod.url}" target="_blank" rel="noopener" th:text="${databasePipelines.prod.displayStatus()}"></a>
+                            <span th:unless="${databasePipelines.prod.url != null and !databasePipelines.prod.url.isBlank()}" th:text="${databasePipelines.prod.displayStatus()}"></span>
+                        </td>
+                        <td class="manual">—</td>
+                        <td class="manual">—</td>
                     </tr>
                     <tr th:if="${report.ddl.isEmpty()}"><td colspan="12" class="none">Tidak ada tiket DDL.</td></tr>
                     </tbody>
@@ -274,21 +333,118 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
 
         <!-- ===== Repo Impacted ===== -->
         <section class="panel" id="tab-repo">
-            <p class="hint">Daftar repository diturunkan otomatis dari tiket DevOps. Status deployment, unit testing, dan PR ke main diisi manual di Excel.</p>
+            <p class="hint">Daftar Repository Related dan Service hanya menampilkan item yang terdaftar di <code>repository-coverage-whitelist.txt</code>. SIT menyediakan branch <code>develop</code> dan <code>develop-support</code> (default <code>develop-support</code>), UAT memakai <code>release/{fixVersion}</code>, dan PROD memakai <code>main</code>.</p>
+            <ul class="warnings" th:if="${!qualityWarnings.isEmpty()}">
+                <li th:each="w : ${qualityWarnings}" th:text="${w}"></li>
+            </ul>
             <div class="scroll">
-                <table class="tbl small">
+                <table class="tbl small" data-paginate="true">
                     <thead>
-                    <tr><th rowspan="2">No</th><th rowspan="2">Repository Related</th><th colspan="3">Status Deployment</th><th colspan="3">Status Unit Testing</th><th rowspan="2">Pull Request To Main</th></tr>
-                    <tr><th>SIT</th><th>UAT</th><th>PROD</th><th>SIT</th><th>UAT</th><th>PROD</th></tr>
+                    <tr>
+                        <th rowspan="2">No</th>
+                        <th rowspan="2">Repository Related</th>
+<!--                        <th rowspan="2">Priority</th>-->
+<!--                        <th colspan="3">Status Deployment</th>-->
+<!--                        <th colspan="8">Status Unit Testing</th>-->
+<!--                        <th rowspan="2">Pull Request To Main</th>-->
+                        <th colspan="4"><center>SIT · Sonar Quality</center></th>
+                        <th colspan="4"><center>UAT · Sonar Quality</center></th>
+                        <th colspan="4"><center>PROD · Sonar Quality</center></th>
+                        <th rowspan="2">Pull Request To Main</th>
+                    </tr>
+                    <tr>
+<!--                        <th>SIT</th>-->
+<!--                        <th>UAT</th>-->
+<!--                        <th>PROD</th>-->
+                        <th>Branch</th>
+                        <th>Quality Gate</th>
+                        <th>Coverage</th>
+                        <th>Status Pipeline</th>
+                        <th>Branch</th>
+                        <th>Quality Gate</th>
+                        <th>Coverage</th>
+                        <th>Status Pipeline</th>
+                        <th>Branch</th>
+                        <th>Quality Gate</th>
+                        <th>Coverage</th>
+                        <th>Status Pipeline</th>
+                    </tr>
                     </thead>
                     <tbody>
-                    <tr th:each="r, it : ${report.repos}">
-                        <td th:text="${it.count}"></td><td th:text="${r.name}"></td>
-                        <td class="manual" th:each="i : ${#numbers.sequence(1, 7)}">—</td>
+                    <tr th:each="r, it : ${report.repos}"
+                        th:with="qs=${qualitySitByRepo.get(r.name)},qu=${qualityUatByRepo.get(r.name)},qp=${qualityProdByRepo.get(r.name)},prUrl=${r.prToMainUrl()},prLabel=${r.prToMainLabel()}">
+                        <td th:text="${it.count}"></td>
+                        <td th:text="${r.name}"></td>
+<!--                        <td class="manual">—</td>-->
+<!--                        <td class="manual">—</td><td class="manual">—</td><td class="manual">—</td>-->
+<!--                        <td class="manual">—</td><td class="manual">—</td><td class="manual">—</td><td class="manual">—</td>-->
+<!--                        <td class="manual">—</td><td class="manual">—</td><td class="manual">—</td><td class="manual">—</td>-->
+<!--                        <td><a th:if="${!#strings.isEmpty(prUrl)}" th:href="${prUrl}" target="_blank" rel="noopener" th:text="${prLabel}"></a><span th:unless="${!#strings.isEmpty(prUrl)}">—</span></td>-->
+                        <td th:text="${qs == null ? sitBranch : qs.branch}"></td>
+                        <td class="quality-neutral" th:classappend="${qs == null ? '' : (qs.qualityGateStatus == 'ERROR' ? ' quality-error' : (qs.qualityGateStatus == 'NOT_WHITELISTED' ? ' quality-not-whitelisted' : (qs.qualityGateStatus == 'UNAVAILABLE' ? ' quality-unavailable' : (qs.qualityGateStatus == 'OK' ? ' quality-ok' : ''))))}"
+                            th:title="${qs == null ? '' : qs.note}" th:text="${qs == null ? '—' : qs.qualityGateStatus}"></td>
+                        <td class="coverage-neutral" th:classappend="${qs == null ? '' : (qs.coverageBelow80 ? ' coverage-low' : (qs.coverageAbove80 ? ' coverage-high' : ''))}"
+                            th:title="${qs == null ? '' : qs.note}" th:text="${qs == null ? '—' : qs.coveragePercent}"></td>
+                        <td class="pipeline-neutral" th:classappend="${qs == null ? '' : (qs.pipelineStatus == 'BITBUCKET_DISABLED' ? ' pipeline-disabled' : (qs.pipelineStatus == 'NOT_WHITELISTED' ? ' pipeline-not-whitelisted' : ''))}"
+                            th:title="${qs == null ? '' : qs.note}">
+                            <a th:if="${qs != null and !#strings.isEmpty(qs.pipelineUrl)}" th:href="${qs.pipelineUrl}"
+                               target="_blank" rel="noopener" th:text="${qs.pipelineLabel()}"></a>
+                            <span th:unless="${qs != null and !#strings.isEmpty(qs.pipelineUrl)}"
+                                  th:text="${qs == null ? '—' : qs.pipelineLabel()}"></span>
+                        </td>
+                        <td th:text="${qu == null ? uatBranch : qu.branch}"></td>
+                        <td class="quality-neutral" th:classappend="${qu == null ? '' : (qu.qualityGateStatus == 'ERROR' ? ' quality-error' : (qu.qualityGateStatus == 'NOT_WHITELISTED' ? ' quality-not-whitelisted' : (qu.qualityGateStatus == 'UNAVAILABLE' ? ' quality-unavailable' : (qu.qualityGateStatus == 'OK' ? ' quality-ok' : ''))))}"
+                            th:title="${qu == null ? '' : qu.note}" th:text="${qu == null ? '—' : qu.qualityGateStatus}"></td>
+                        <td class="coverage-neutral" th:classappend="${qu == null ? '' : (qu.coverageBelow80 ? ' coverage-low' : (qu.coverageAbove80 ? ' coverage-high' : ''))}"
+                            th:title="${qu == null ? '' : qu.note}" th:text="${qu == null ? '—' : qu.coveragePercent}"></td>
+                        <td class="pipeline-neutral" th:classappend="${qu == null ? '' : (qu.pipelineStatus == 'BITBUCKET_DISABLED' ? ' pipeline-disabled' : (qu.pipelineStatus == 'NOT_WHITELISTED' ? ' pipeline-not-whitelisted' : ''))}"
+                            th:title="${qu == null ? '' : qu.note}">
+                            <a th:if="${qu != null and !#strings.isEmpty(qu.pipelineUrl)}" th:href="${qu.pipelineUrl}"
+                               target="_blank" rel="noopener" th:text="${qu.pipelineLabel()}"></a>
+                            <span th:unless="${qu != null and !#strings.isEmpty(qu.pipelineUrl)}"
+                                  th:text="${qu == null ? '—' : qu.pipelineLabel()}"></span>
+                        </td>
+                        <td th:text="${qp == null ? 'main' : qp.branch}"></td>
+                        <td class="quality-neutral" th:classappend="${qp == null ? '' : (qp.qualityGateStatus == 'ERROR' ? ' quality-error' : (qp.qualityGateStatus == 'NOT_WHITELISTED' ? ' quality-not-whitelisted' : (qp.qualityGateStatus == 'UNAVAILABLE' ? ' quality-unavailable' : (qp.qualityGateStatus == 'OK' ? ' quality-ok' : ''))))}"
+                            th:title="${qp == null ? '' : qp.note}" th:text="${qp == null ? '—' : qp.qualityGateStatus}"></td>
+                        <td class="coverage-neutral" th:classappend="${qp == null ? '' : (qp.coverageBelow80 ? ' coverage-low' : (qp.coverageAbove80 ? ' coverage-high' : ''))}"
+                            th:title="${qp == null ? '' : qp.note}" th:text="${qp == null ? '—' : qp.coveragePercent}"></td>
+                        <td class="pipeline-neutral" th:classappend="${qp == null ? '' : (qp.pipelineStatus == 'BITBUCKET_DISABLED' ? ' pipeline-disabled' : (qp.pipelineStatus == 'NOT_WHITELISTED' ? ' pipeline-not-whitelisted' : ''))}"
+                            th:title="${qp == null ? '' : qp.note}">
+                            <a th:if="${qp != null and !#strings.isEmpty(qp.pipelineUrl)}" th:href="${qp.pipelineUrl}"
+                               target="_blank" rel="noopener" th:text="${qp.pipelineLabel()}"></a>
+                            <span th:unless="${qp != null and !#strings.isEmpty(qp.pipelineUrl)}"
+                                  th:text="${qp == null ? '—' : qp.pipelineLabel()}"></span>
+                        </td>
+                        <td><a th:if="${!#strings.isEmpty(prUrl)}" th:href="${prUrl}" target="_blank" rel="noopener" th:text="${prLabel}"></a><span th:unless="${!#strings.isEmpty(prUrl)}">—</span></td>
                     </tr>
-                    <tr th:if="${report.repos.isEmpty()}"><td colspan="9" class="none">Belum ada repository terdeteksi.</td></tr>
+                    <tr th:if="${report.repos.isEmpty()}"><td colspan="15" class="none">Belum ada repository whitelist terdeteksi.</td></tr>
                     </tbody>
                 </table>
+            </div>
+
+            <div class="card coverage-whitelist" th:if="${!whitelistCandidates.isEmpty()}">
+                <h3>Coverage Repository Whitelist</h3>
+                <p class="hint">Daftar ini hanya menampilkan repository dari fixVersion terpilih yang sudah tercantum pada <code>repository-coverage-whitelist.txt</code>. Untuk menambahkan service baru, tambahkan slug repository ke file whitelist lalu muat ulang report.</p>
+                <form method="post" th:action="@{/jira-report/coverage-whitelist}">
+                    <input type="hidden" name="fixVersion" th:value="${report.fixVersion}">
+                    <input type="hidden" name="sitBranch" th:value="${sitBranch}">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
+                    <div class="whitelist-grid">
+                        <label class="whitelist-item" th:each="r : ${whitelistCandidates}">
+                            <input type="hidden" name="visibleRepositories" th:value="${r.name}">
+                            <input type="checkbox" name="repositories" th:value="${r.name}"
+                                   th:checked="${coverageWhitelist.contains(T(com.hito.genai.jiraclaude.RepoCoverageWhitelistService).normalize(r.name))}"
+                                   th:disabled="${currentUser == null or !currentUser.admin}">
+                            <span th:text="${r.name}"></span>
+                        </label>
+                    </div>
+                    <div class="whitelist-footer" th:if="${currentUser != null and currentUser.admin}">
+                        <button class="btn primary" type="submit">Simpan Whitelist</button>
+                        <span class="hint">Perubahan whitelist hanya dapat dilakukan oleh ROLE_ADMIN.</span>
+                    </div>
+                    <p class="hint" th:unless="${currentUser != null and currentUser.admin}">Whitelist hanya dapat diubah oleh administrator.</p>
+                </form>
             </div>
         </section>
 
@@ -298,18 +454,90 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
 <!--                <h3>Collections Related</h3>-->
 <!--                <p class="hint">Daftar collection yang berubah diisi manual pada sheet <strong>Database Related</strong> di Excel. Lihat tab DDL Ticket untuk tiket terkait.</p>-->
 <!--            </div>-->
-            <p class="hint">Kolom bertanda <span class="manual">—</span> Daftar collection yang berubah diisi manual pada sheet <strong>Database Related</strong> di Excel. Lihat tab DDL Ticket untuk tiket terkait.</p>
+            <p class="hint">Kolom <strong>Bitbucket Branch</strong> menampilkan branch repository <code>backendapi-ddl</code> yang tertaut pada panel Development Jira. Status Testing membaca pipeline pada branch target atau deployment environment SIT*, UAT*, dan PROD*. <span class="pipeline-success">SUCCESS</span> berarti berhasil dan <span class="pipeline-failed">FAILED</span> berarti gagal; kolom lainnya tetap dapat diisi manual.</p>
             <div class="scroll">
-                <table class="tbl small">
+                <table class="tbl small" data-paginate="true">
                     <thead><tr><th>No</th><th>Ticket</th><th>Bitbucket Branch</th><th>Note</th><th>Collections</th><th>Note</th>
                         <th>Status SIT</th><th>Status UAT</th><th>Already Check/Improve</th><th>Status Prod</th><th>Rollback Database</th><th>Assets Folder</th></tr></thead>
                     <tbody>
                     <tr th:each="d, it : ${report.db}">
                         <td th:text="${it.count}"></td>
                         <td><a th:href="${d.link}" target="_blank" rel="noopener" th:text="${d.label}"></a></td>
-                        <td class="manual" th:each="i : ${#numbers.sequence(1, 10)}">—</td>
+                        <td th:text="${'SIT: ' + (databasePipelines.sit.branch == null or databasePipelines.sit.branch.isBlank() ? d.sitBranch : databasePipelines.sit.branch) + ' | UAT: ' + (databasePipelines.uat.branch == null or databasePipelines.uat.branch.isBlank() ? d.uatBranch : databasePipelines.uat.branch) + ' | PROD: ' + (databasePipelines.prod.branch == null or databasePipelines.prod.branch.isBlank() ? d.prodBranch : databasePipelines.prod.branch)}"
+                            th:title="${d.prSummary}"></td>
+                        <td class="manual">—</td>
+                        <td class="manual">—</td>
+                        <td class="manual">—</td>
+                        <td class="quality-neutral" th:classappend="${databasePipelines.sit.success ? ' pipeline-success' : (databasePipelines.sit.failed ? ' pipeline-failed' : (databasePipelines.sit.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.sit.branch + ' | ' + databasePipelines.sit.note}">
+                            <a th:if="${databasePipelines.sit.url != null and !databasePipelines.sit.url.isBlank()}"
+                               th:href="${databasePipelines.sit.url}" target="_blank" rel="noopener"
+                               th:text="${databasePipelines.sit.displayStatus()}"></a>
+                            <span th:if="${databasePipelines.sit.url == null or databasePipelines.sit.url.isBlank()}"
+                                  th:text="${databasePipelines.sit.displayStatus()}"></span>
+                        </td>
+                        <td class="quality-neutral" th:classappend="${databasePipelines.uat.success ? ' pipeline-success' : (databasePipelines.uat.failed ? ' pipeline-failed' : (databasePipelines.uat.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.uat.branch + ' | ' + databasePipelines.uat.note}">
+                            <a th:if="${databasePipelines.uat.url != null and !databasePipelines.uat.url.isBlank()}"
+                               th:href="${databasePipelines.uat.url}" target="_blank" rel="noopener"
+                               th:text="${databasePipelines.uat.displayStatus()}"></a>
+                            <span th:if="${databasePipelines.uat.url == null or databasePipelines.uat.url.isBlank()}"
+                                  th:text="${databasePipelines.uat.displayStatus()}"></span>
+                        </td>
+                        <td class="manual">—</td>
+                        <td class="quality-neutral" th:classappend="${databasePipelines.prod.success ? ' pipeline-success' : (databasePipelines.prod.failed ? ' pipeline-failed' : (databasePipelines.prod.running ? ' pipeline-running' : ''))}"
+                            th:title="${'Branch: ' + databasePipelines.prod.branch + ' | ' + databasePipelines.prod.note}">
+                            <a th:if="${databasePipelines.prod.url != null and !databasePipelines.prod.url.isBlank()}"
+                               th:href="${databasePipelines.prod.url}" target="_blank" rel="noopener"
+                               th:text="${databasePipelines.prod.displayStatus()}"></a>
+                            <span th:if="${databasePipelines.prod.url == null or databasePipelines.prod.url.isBlank()}"
+                                  th:text="${databasePipelines.prod.displayStatus()}"></span>
+                        </td>
+                        <td class="manual">—</td>
+                        <td class="manual">—</td>
                     </tr>
-                    <tr th:if="${report.ddl.isEmpty()}"><td colspan="12" class="none">Tidak ada tiket DDL.</td></tr>
+                    <tr th:if="${report.db.isEmpty()}"><td colspan="12" class="none">Tidak ada tiket Database Related.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== Bugs Development / UAT ===== -->
+        <section class="panel" id="tab-bugs-development-uat">
+            <div class="filters">
+                <input type="search" id="bugs-development-uat-filter" placeholder="Cari key, summary, assignee, parent…">
+                <span class="hint" id="bugs-development-uat-visible"></span>
+            </div>
+            <div class="scroll">
+                <table class="tbl" id="bugs-development-uat-table" data-paginate="true">
+                    <thead>
+                    <tr>
+                        <th>No</th><th>Issue Type</th><th>Issue key</th><th>Summary</th><th>Using PRDA API?</th>
+                        <th>Parent key</th><th>Parent summary</th><th>Assignee</th><th>Reporter</th><th>Sprint</th>
+                        <th>Status</th><th>Priority</th><th>Resolution</th><th>Created</th><th>Updated</th><th>SP</th><th>Labels</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="t, it : ${report.bugsDevelopmentUat}" th:attr="data-type=${t.issueType}">
+                        <td th:text="${it.count}"></td>
+                        <td th:text="${t.issueType}"></td>
+                        <td class="nowrap"><a th:href="${t.link}" target="_blank" rel="noopener" th:text="${t.key}"></a></td>
+                        <td class="summary" th:text="${t.summary}"></td>
+                        <td th:text="${t.usingPrdaApi}"></td>
+                        <td class="nowrap" th:text="${t.parentKey}"></td>
+                        <td th:text="${t.parentSummary}"></td>
+                        <td class="nowrap" th:text="${t.assignee}"></td>
+                        <td class="nowrap" th:text="${t.reporter}"></td>
+                        <td th:text="${#strings.listJoin(t.sprints, ', ')}"></td>
+                        <td><span class="badge" th:classappend="${'cat-' + t.statusCategory}" th:text="${t.status}"></span></td>
+                        <td class="nowrap" th:text="${t.priority}"></td>
+                        <td class="nowrap" th:text="${t.resolution}"></td>
+                        <td class="nowrap" th:text="${t.created}"></td>
+                        <td class="nowrap" th:text="${t.updated}"></td>
+                        <td class="num" th:text="${t.storyPoints}"></td>
+                        <td class="labels-cell" th:text="${#strings.listJoin(t.labels, ', ')}"></td>
+                    </tr>
+                    <tr th:if="${report.bugsDevelopmentUat.isEmpty()}"><td colspan="17" class="none">Tidak ada Bugs Development / UAT untuk JQL ini.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -325,7 +553,7 @@ JIRA_PROJECT_KEYS=BE,MD        # opsional: untuk mengisi dropdown fixVersion</pr
 
         <!-- ===== Hotfix / Sanity ===== -->
         <section class="panel" id="tab-hotfix">
-            <table class="tbl small">
+            <table class="tbl small" data-paginate="true">
                 <thead><tr><th>No</th><th>Ticket</th></tr></thead>
                 <tbody>
                 <tr th:each="h, it : ${report.hotfix}">

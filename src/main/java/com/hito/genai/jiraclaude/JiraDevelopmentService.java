@@ -1,7 +1,9 @@
 package com.hito.genai.jiraclaude;
 
-import com.hito.genai.jiraclaude.JiraClaudeProperties;
-import com.hito.genai.jiraclaude.ReportModels.*;
+import com.hito.genai.jiraclaude.ReportModels.Branch;
+import com.hito.genai.jiraclaude.ReportModels.DevInfo;
+import com.hito.genai.jiraclaude.ReportModels.PullRequest;
+import com.hito.genai.jiraclaude.ReportModels.Ticket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -140,12 +142,13 @@ public class JiraDevelopmentService {
             for (JsonNode b : d.path("branches")) {
                 String name = b.path("name").asString("");
                 if (!name.isBlank()) {
-                    branches.add(new Branch(name, b.path("url").asString(""), shortRepo(b.path("repository").path("name").asString(""))));
+                    String repository = repositoryName(b);
+                    branches.add(new Branch(name, b.path("url").asString(""), shortRepo(repository)));
                 }
             }
             for (JsonNode p : d.path("pullRequests")) {
                 String url = p.path("url").asString("");
-                String repo = firstNonBlank(p.path("repositoryName").asString(""), p.path("repository").path("name").asString(""));
+                String repo = repositoryName(p);
                 PullRequest pr = new PullRequest(
                         p.path("id").asString(""),
                         p.path("name").asString(""),
@@ -177,17 +180,69 @@ public class JiraDevelopmentService {
         return n.path("name").asString("");
     }
 
-    /** "workspace/prdi-order-service" -> "prdi-order-service". */
-    static String shortRepo(String name) {
-        if (name == null) {
-            return "";
-        }
-        String n = name.trim();
-        int i = n.lastIndexOf('/');
-        return i >= 0 ? n.substring(i + 1) : n;
+    /** Extract repository slug/name from the variants returned by Jira dev-status. */
+    private static String repositoryName(JsonNode item) {
+        JsonNode repository = item.path("repository");
+        return firstNonBlank(
+                repository.path("slug").asString(""),
+                repository.path("full_name").asString(""),
+                item.path("repositorySlug").asString(""),
+                item.path("repositoryName").asString(""),
+                item.path("repository_name").asString(""),
+                repository.path("links").path("html").path("href").asString(""),
+                item.path("repositoryUrl").asString(""),
+                item.path("repository_url").asString(""),
+                repository.path("name").asString(""),
+                repository.asString(""));
     }
 
-    private static String firstNonBlank(String a, String b) {
-        return a != null && !a.isBlank() ? a : b;
+    /**
+     * Normalise repository identifiers returned by Jira dev-status.
+     * Jira may return a slug/full-name or an HTML URL such as
+     * https://bitbucket.org/prodiadigitalindonesia/backendapi-ddl/src/main/.
+     * In the latter case, the repository is the path segment before "src";
+     * taking the last segment would incorrectly return "main".
+     */
+    static String shortRepo(String name) {
+        if (name == null || name.isBlank()) return "";
+        String value = name.trim();
+        String path = value;
+        try {
+            if (value.contains("://")) {
+                path = java.net.URI.create(value).getPath();
+                if (path == null) path = value;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Continue with best-effort string normalisation.
+        }
+        path = path.split("[?#]", 2)[0];
+        while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        List<String> segments = Arrays.stream(path.split("/"))
+                .map(String::trim).filter(segment -> !segment.isBlank()).toList();
+        String selected = "";
+        for (int i = 0; i < segments.size(); i++) {
+            String marker = segments.get(i).toLowerCase(Locale.ROOT);
+            if (Set.of("src", "branches", "branch", "pull-requests", "commits", "downloads", "admin")
+                    .contains(marker) && i > 0) {
+                selected = segments.get(i - 1);
+                break;
+            }
+        }
+        if (selected.isBlank()) {
+            // URLs include the workspace as the first path segment and repository as the second.
+            // Plain workspace/repository values use the final segment as well.
+            if (value.contains("://") && segments.size() >= 2) selected = segments.get(1);
+            else selected = segments.isEmpty() ? value : segments.get(segments.size() - 1);
+        }
+        selected = selected.trim();
+        if (selected.toLowerCase(Locale.ROOT).endsWith(".git")) {
+            selected = selected.substring(0, selected.length() - 4);
+        }
+        return selected;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return "";
     }
 }

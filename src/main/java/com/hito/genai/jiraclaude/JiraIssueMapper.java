@@ -26,7 +26,7 @@ public final class JiraIssueMapper {
     /** Daftar field yang diminta ke Jira (default search hanya mengembalikan id). */
     public static List<String> requestedFields(FieldIds ids) {
         List<String> f = new ArrayList<>(List.of("summary", "issuetype", "parent", "assignee", "reporter", "status",
-                "priority", "resolution", "created", "updated"));
+                "priority", "resolution", "created", "updated", "labels"));
         for (String id : new String[]{ids.storyPoints(), ids.sprint(), ids.usingPrdaApi()}) {
             if (id != null && !f.contains(id)) {
                 f.add(id);
@@ -50,6 +50,17 @@ public final class JiraIssueMapper {
                     }
                 }
             }
+        }
+
+        List<String> labels = new ArrayList<>();
+        JsonNode labelNode = f.path("labels");
+        if (labelNode.isArray()) {
+            for (JsonNode label : labelNode) {
+                String value = label.asString("").trim();
+                if (!value.isBlank()) labels.add(value);
+            }
+        } else if (!labelNode.isMissingNode() && !labelNode.isNull() && !labelNode.asString("").isBlank()) {
+            labels.add(labelNode.asString("").trim());
         }
 
         Double points = null;
@@ -81,7 +92,7 @@ public final class JiraIssueMapper {
                 f.path("resolution").path("name").asString(""),
                 date(f.path("created").asString("")),
                 date(f.path("updated").asString("")),
-                points);
+                points, List.copyOf(labels));
     }
 
     /** Nilai field generik (string, angka, objek opsi, atau array) menjadi teks. */

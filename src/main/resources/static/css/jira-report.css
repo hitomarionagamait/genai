@@ -105,3 +105,63 @@ a:hover { text-decoration: underline; }
 .answer.error { background: var(--bad-bg); color: var(--bad); border-color: #fecaca; }
 .answer.loading { color: var(--muted); font-style: italic; }
 @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .filters input { min-width: 0; width: 100%; } .field select, .field input { min-width: 0; width: 100%; } }
+
+.coverage-whitelist { margin-top: 14px; }
+.whitelist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0; }
+.whitelist-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; min-width: 0; }
+.whitelist-item input { flex: 0 0 auto; }
+.whitelist-item span { overflow-wrap: anywhere; }
+.whitelist-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.quality-ok { background: var(--ok-bg); color: var(--ok); }
+.quality-error, .quality-failed { background: var(--bad-bg); color: var(--bad); }
+.quality-warn, .quality-none, .quality-not_configured, .quality-unavailable, .quality-branch_not_found, .quality-bitbucket_unavailable { background: var(--warn-bg); color: var(--warn); }
+
+.quality-note { display: block; color: var(--muted); font-size: .72rem; line-height: 1.25; max-width: 260px; margin-top: 3px; white-space: normal; }
+
+
+/* Repo Impacted: status colors shared visually with the Excel export. */
+.quality-neutral, .coverage-neutral, .pipeline-neutral { background: #f3f4f6; color: #374151; }
+.quality-error, .coverage-low { background: #fee2e2; color: #991b1b; }
+.quality-not-whitelisted, .pipeline-disabled { background: #e5e7eb; color: #374151; }
+.quality-unavailable { background: #ffedd5; color: #9a3412; }
+.quality-ok, .coverage-high { background: #dcfce7; color: #166534; }
+.pipeline-not-whitelisted { background: #fef3c7; color: #92400e; }
+.tbl td.pipeline-disabled a, .tbl td.pipeline-not-whitelisted a { color: inherit; font-weight: 600; }
+
+
+/* Database Related pipeline outcome colors, shared with Excel. */
+.pipeline-done, .pipeline-success { background: #dcfce7; color: #166534; font-weight: 700; }
+.pipeline-failed { background: #fee2e2; color: #991b1b; font-weight: 700; }
+.pipeline-running { background: #fef3c7; color: #92400e; font-weight: 700; }
+.tbl td.pipeline-done a, .tbl td.pipeline-success a, .tbl td.pipeline-failed a, .tbl td.pipeline-running a {
+    color: inherit;
+    font-weight: 700;
+}
+
+
+/* Loading feedback during Jira report form navigation. */
+.loading-overlay { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .48); backdrop-filter: blur(2px); }
+.loading-overlay[hidden] { display: none; }
+.loading-card { width: min(440px, 100%); padding: 26px 28px; border-radius: 14px; background: #fff; box-shadow: 0 18px 50px rgba(0,0,0,.2); display: grid; justify-items: center; gap: 10px; text-align: center; }
+.loading-card strong { font-size: 1.05rem; }
+.loading-card span { color: var(--muted); font-size: .86rem; }
+.loading-spinner { width: 42px; height: 42px; border: 4px solid #dbeafe; border-top-color: var(--primary); border-radius: 50%; animation: jira-spin .8s linear infinite; }
+.loading-track { width: 100%; height: 6px; border-radius: 99px; overflow: hidden; background: #e5e7eb; margin-top: 4px; }
+.loading-track i { display: block; width: 35%; height: 100%; background: var(--primary); border-radius: inherit; animation: jira-progress 1.4s ease-in-out infinite; }
+@keyframes jira-spin { to { transform: rotate(360deg); } }
+@keyframes jira-progress { 0% { transform: translateX(-110%); } 100% { transform: translateX(310%); } }
+
+/* Independent pagination controls for each list table. */
+.pagination-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 9px 10px; background: var(--card); border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; color: var(--muted); font-size: .8rem; }
+.pagination-controls select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px; background: #fff; color: var(--ink); }
+.pagination-controls button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 9px; background: #fff; color: var(--ink); cursor: pointer; }
+.pagination-controls button:disabled { opacity: .4; cursor: not-allowed; }
+.pipeline-success { background: #dcfce7; color: #166534; font-weight: 700; }
+.tbl td.pipeline-success a { color: inherit; font-weight: 700; }
+
+/* Labels Jira and Excel download progress */
+.tbl .labels-cell { min-width: 180px; max-width: 360px; white-space: normal; overflow-wrap: anywhere; }
+.loading-track.indeterminate i { animation: jira-progress 1.4s ease-in-out infinite; }
+.loading-track:not(.indeterminate) i { animation: none; width: 0; transition: width .12s linear; }
+.loading-percent { color: var(--muted); font-size: .78rem; }
+.btn.disabled, .btn[aria-disabled="true"] { opacity: .65; pointer-events: none; }

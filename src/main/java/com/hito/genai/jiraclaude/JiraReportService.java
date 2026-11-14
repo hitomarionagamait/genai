@@ -34,6 +34,7 @@ public class JiraReportService {
     private final JiraClaudeProperties props;
     private final DevOpsClassifier classifier;
     private final JiraDevelopmentService development;
+    private final RepositoryQualityProperties repositoryQualityProperties;
 
     private record Cached(Report report, Instant at) {
     }
@@ -44,10 +45,12 @@ public class JiraReportService {
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private volatile CachedVersions versionsCache;
 
-    public JiraReportService(JiraClient client, JiraClaudeProperties props, JiraDevelopmentService development) {
+    public JiraReportService(JiraClient client, JiraClaudeProperties props, JiraDevelopmentService development,
+                             RepositoryQualityProperties repositoryQualityProperties) {
         this.client = client;
         this.props = props;
         this.development = development;
+        this.repositoryQualityProperties = repositoryQualityProperties;
         this.classifier = new DevOpsClassifier(props.getDevops().getRepoPattern());
     }
 
@@ -63,6 +66,10 @@ public class JiraReportService {
 
     /** Versi (tidak termasuk yang di-archive) dari semua project, terbaru lebih dulu. */
     public List<VersionOption> fixVersions(boolean refresh) {
+        if (refresh) {
+            // Invalidate before fetching: a failed refresh must not silently leave an old list reusable.
+            versionsCache = null;
+        }
         CachedVersions c = versionsCache;
         if (!refresh && c != null && fresh(c.at())) {
             return c.versions();
@@ -107,6 +114,12 @@ public class JiraReportService {
 
     public Report report(String fixVersionRaw, boolean refresh) {
         String fixVersion = validateVersion(fixVersionRaw);
+        if (refresh) {
+            // Remove the previous snapshot before contacting Jira. If the fresh query fails,
+            // a later non-refresh caller must not mistake the old snapshot for current data.
+            cache.remove(fixVersion);
+            log.info("Memuat ulang Jira report untuk fixVersion={} secara langsung", fixVersion);
+        }
         Cached c = cache.get(fixVersion);
         if (!refresh && c != null && fresh(c.at())) {
             return c.report();
@@ -201,7 +214,7 @@ public class JiraReportService {
                 if (!missing.isEmpty() && !dev.unavailable()) {
                     devInfo.putAll(development.collect(missing).byKey());
                 }
-                ddlTickets.forEach(t -> ddl.add(ddlRow(t, devInfo.get(t.key()))));
+                ddlTickets.forEach(t -> ddl.add(ddlRow(t, devInfo.get(t.key()), fixVersion)));
                 sections.add(new Section("DDL Ticket", jql, ddl.size(), ""));
             } catch (JiraException e) {
                 sections.add(new Section("DDL Ticket", jql, 0, "Gagal: " + e.getMessage()));
@@ -210,7 +223,7 @@ public class JiraReportService {
         } else {
             for (Ticket t : tickets) {
                 if (DDL.matcher(t.summary()).find()) {
-                    ddl.add(ddlRow(t, devInfo.get(t.key())));
+                    ddl.add(ddlRow(t, devInfo.get(t.key()), fixVersion));
                 }
             }
             sections.add(new Section("DDL Ticket", "(diturunkan dari All Ticket: summary memuat \"DDL\")", ddl.size(), ""));
@@ -218,7 +231,7 @@ public class JiraReportService {
 
         // --- Database
         List<DatabaseRow> db = new ArrayList<>();
-        String dbJql = props.getJql().getDdl();
+        String dbJql = props.getJql().getDb();
         if (dbJql != null && !dbJql.isBlank()) {
             String jql = buildJql(dbJql, fixVersion);
             try {
@@ -231,7 +244,7 @@ public class JiraReportService {
                 if (!missing.isEmpty() && !dev.unavailable()) {
                     devInfo.putAll(development.collect(missing).byKey());
                 }
-                dbTickets.forEach(t -> db.add(dbRow(t, devInfo.get(t.key()))));
+                dbTickets.forEach(t -> db.add(dbRow(t, devInfo.get(t.key()), fixVersion)));
                 sections.add(new Section("DB Ticket", jql, db.size(), ""));
             } catch (JiraException e) {
                 sections.add(new Section("DB Ticket", jql, 0, "Gagal: " + e.getMessage()));
@@ -240,10 +253,27 @@ public class JiraReportService {
         } else {
             for (Ticket t : tickets) {
                 if (DATABASE.matcher(t.summary()).find()) {
-                    db.add(dbRow(t, devInfo.get(t.key())));
+                    db.add(dbRow(t, devInfo.get(t.key()), fixVersion));
                 }
             }
-            sections.add(new Section("Database Ticket", "(diturunkan dari All Ticket: summary memuat \"Collection\")", ddl.size(), ""));
+            sections.add(new Section("Database Ticket", "(diturunkan dari All Ticket: summary memuat \"Collection\")", db.size(), ""));
+        }
+
+        // --- Bugs Development / UAT (query is intentionally kept separate from All Ticket)
+        List<Ticket> bugsDevelopmentUat = new ArrayList<>();
+        String bugsDevelopmentUatTemplate = props.getJql().getBugsDevelopmentUat();
+        if (bugsDevelopmentUatTemplate != null && !bugsDevelopmentUatTemplate.isBlank()) {
+            String jql = buildJql(bugsDevelopmentUatTemplate, fixVersion);
+            try {
+                for (JsonNode issue : client.search(jql, fields, max)) {
+                    bugsDevelopmentUat.add(JiraIssueMapper.toTicket(issue, ids, base));
+                }
+                sections.add(new Section("Bugs Development / UAT", jql, bugsDevelopmentUat.size(),
+                        bugsDevelopmentUat.size() >= max ? "Dibatasi " + max + " tiket (jira.max-issues)." : ""));
+            } catch (JiraException e) {
+                sections.add(new Section("Bugs Development / UAT", jql, 0, "Gagal: " + e.getMessage()));
+                warnings.add("Bugs Development / UAT gagal ditarik: " + e.getMessage());
+            }
         }
 
         // --- Hotfix / Sanity
@@ -280,26 +310,93 @@ public class JiraReportService {
                 dev.failed(), dev.unavailable(), withPr, withoutDev);
 
         return new Report(fixVersion, Instant.now(), List.copyOf(sections), List.copyOf(tickets),
-                Collections.unmodifiableMap(devops), unknownEnv, List.copyOf(ddl), List.copyOf(db), List.copyOf(hotfix), repos,
+                Collections.unmodifiableMap(devops), unknownEnv, List.copyOf(ddl), List.copyOf(db), List.copyOf(hotfix),
+                List.copyOf(bugsDevelopmentUat), repos,
                 summarize(tickets), List.copyOf(warnings), Collections.unmodifiableMap(devInfo), devSummary);
     }
 
-    private static DdlRow ddlRow(Ticket t, DevInfo info) {
-        List<String> branches = info == null ? List.of() : info.branchNames();
-        String prSummary = info == null ? "" : info.pullRequests().stream()
-                .map(p -> (p.id().isBlank() ? "PR" : "PR " + p.id()) + " " + p.status()
-                        + (p.destination().isBlank() ? "" : " \u2192 " + p.destination()))
-                .collect(Collectors.joining("; "));
-        return new DdlRow(t.key(), t.link(), t.label(), t.assignee(), t.status(), branches, prSummary);
+    private DdlRow ddlRow(Ticket t, DevInfo info, String fixVersion) {
+        List<String> branches = backendApiDdlBranches(info);
+        String prSummary = backendApiDdlPrSummary(info);
+        BranchTargets targets = branchTargets(branches, fixVersion);
+        return new DdlRow(t.key(), t.link(), t.label(), t.assignee(), t.status(), branches, prSummary,
+                targets.sit(), targets.uat(), targets.prod());
     }
 
-    private static DatabaseRow dbRow(Ticket t, DevInfo info) {
-        List<String> branches = info == null ? List.of() : info.branchNames();
-        String prSummary = info == null ? "" : info.pullRequests().stream()
+    private DatabaseRow dbRow(Ticket t, DevInfo info, String fixVersion) {
+        List<String> branches = backendApiDdlBranches(info);
+        String prSummary = backendApiDdlPrSummary(info);
+        BranchTargets targets = branchTargets(branches, fixVersion);
+        return new DatabaseRow(t.key(), t.link(), t.label(), t.assignee(), t.status(), branches, prSummary,
+                targets.sit(), targets.uat(), targets.prod());
+    }
+
+    private record BranchTargets(String sit, String uat, String prod) { }
+
+    /** Resolve repository links from Jira dev-status to the dedicated backendapi-ddl repository only. */
+    private static List<String> backendApiDdlBranches(DevInfo info) {
+        if (info == null) return List.of();
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        info.branches().stream().filter(b -> isBackendApiDdl(b.repository()))
+                .map(Branch::name).filter(v -> v != null && !v.isBlank()).forEach(out::add);
+        info.pullRequests().stream().filter(p -> isBackendApiDdl(p.repository())).forEach(p -> {
+            if (p.source() != null && !p.source().isBlank()) out.add(p.source());
+            if (p.destination() != null && !p.destination().isBlank()) out.add(p.destination());
+        });
+        return List.copyOf(out);
+    }
+
+    private static String backendApiDdlPrSummary(DevInfo info) {
+        if (info == null) return "";
+        return info.pullRequests().stream().filter(p -> isBackendApiDdl(p.repository()))
                 .map(p -> (p.id().isBlank() ? "PR" : "PR " + p.id()) + " " + p.status()
-                        + (p.destination().isBlank() ? "" : " \u2192 " + p.destination()))
+                        + (p.source().isBlank() ? "" : " " + p.source())
+                        + (p.destination().isBlank() ? "" : " → " + p.destination()))
                 .collect(Collectors.joining("; "));
-        return new DatabaseRow(t.key(), t.link(), t.label(), t.assignee(), t.status(), branches, prSummary);
+    }
+
+    private static boolean isBackendApiDdl(String repository) {
+        if (repository == null || repository.isBlank()) return false;
+        String normalized = RepoCoverageWhitelistService.normalize(repository)
+                .replaceAll("[^a-z0-9]", "");
+        return normalized.equals("backendapiddl");
+    }
+
+    private BranchTargets branchTargets(List<String> branches, String fixVersion) {
+        String defaultSit = repositoryQualityProperties.getEnvironments().getSit().getBranch();
+        if (defaultSit == null || defaultSit.isBlank()) defaultSit = "develop-support";
+        List<String> values = branches == null ? List.of() : branches;
+        String sit = preferredMatching(values, defaultSit, value -> {
+            String v = normaliseBranch(value);
+            return v.equals("develop-support") || v.equals("develop") || v.startsWith("sit");
+        }, defaultSit);
+        String uatExpected = "release/" + (fixVersion == null ? "" : fixVersion.trim());
+        String uat = preferredMatching(values, uatExpected, value -> {
+            String v = normaliseBranch(value);
+            return v.equals(normaliseBranch(uatExpected)) || v.startsWith("uat");
+        }, uatExpected);
+        String prod = preferredMatching(values, "main", value -> {
+            String v = normaliseBranch(value);
+            return v.equals("main") || v.startsWith("prod");
+        }, "main");
+        return new BranchTargets(sit, uat, prod);
+    }
+
+    private static String preferredMatching(List<String> values, String preferred,
+                                             java.util.function.Predicate<String> match, String fallback) {
+        if (preferred != null && !preferred.isBlank()) {
+            String exact = values.stream().filter(v -> v != null && v.equalsIgnoreCase(preferred)).findFirst().orElse("");
+            if (!exact.isBlank()) return exact;
+        }
+        return values.stream().filter(v -> v != null && !v.isBlank()).filter(match).findFirst().orElse(fallback);
+    }
+
+    private static String normaliseBranch(String value) {
+        if (value == null) return "";
+        String branch = value.trim().toLowerCase(Locale.ROOT);
+        if (branch.startsWith("refs/heads/")) branch = branch.substring("refs/heads/".length());
+        if (branch.startsWith("refs/tags/")) branch = branch.substring("refs/tags/".length());
+        return branch;
     }
 
     /** Gabungkan repository dari PR/branch dan dari tiket DevOps; tentukan status PR ke branch main. */
@@ -321,13 +418,13 @@ public class JiraReportService {
                 RepoPr rp = new RepoPr(info.key(), p.id(), p.title(), p.url(), p.status(), p.source(), p.destination());
                 Map<String, Map<String, RepoPr>> target = mains.contains(p.destination().toLowerCase(Locale.ROOT)) ? toMain : other;
                 target.computeIfAbsent(k, x -> new LinkedHashMap<>()).putIfAbsent(p.url().isBlank() ? info.key() + p.id() : p.url(), rp);
-                tickets.computeIfAbsent(k, x -> new java.util.TreeSet<>(JiraReportService::compareIssueKeys)).add(info.key());
+                tickets.computeIfAbsent(k, x -> new TreeSet<>(JiraReportService::compareIssueKeys)).add(info.key());
             }
             for (Branch b : info.branches()) {
                 if (!b.repository().isBlank()) {
                     String k = b.repository().toLowerCase(Locale.ROOT);
                     display.putIfAbsent(k, b.repository());
-                    tickets.computeIfAbsent(k, x -> new java.util.TreeSet<>(JiraReportService::compareIssueKeys)).add(info.key());
+                    tickets.computeIfAbsent(k, x -> new TreeSet<>(JiraReportService::compareIssueKeys)).add(info.key());
                 }
             }
         }

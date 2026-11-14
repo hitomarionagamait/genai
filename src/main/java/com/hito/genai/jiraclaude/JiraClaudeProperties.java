@@ -16,7 +16,7 @@ public class JiraClaudeProperties {
     /** Project yang versinya muncul di dropdown fixVersion (pisahkan dengan koma). */
     private List<String> projectKeys = new ArrayList<>();
     /** Lokasi template Excel. */
-    private String template = "classpath:jira/Pre_Deployment_Checklist_template.xlsx";
+    private String template = "classpath:templates/jira/Pre Deployment Checklist.xlsx";
     private int cacheTtlMinutes = 10;
     private int maxIssues = 1000;
     private Jql jql = new Jql();
@@ -35,7 +35,10 @@ public class JiraClaudeProperties {
         private String ddl = "";
         /** Sumber sheet "Hotfix OR Sanity Tickets". Kosong = diturunkan dari All Ticket (summary memuat hotfix/sanity). */
         private String hotfix = "";
+        /** Sumber sheet "Database Related". Kosong = diturunkan dari All Ticket (summary memuat "Collection"). */
         private String db = "";
+        /** Sumber tab dan sheet "Bugs Development / UAT"; {fixVersion} mengikuti versi yang dipilih. */
+        private String bugsDevelopmentUat = "project = \"Prodia Digital\" AND affectedVersion = {fixVersion} AND \"Platform[Dropdown]\" = Backend ORDER BY createdDate DESC";
 
         public String getAllTickets() { return allTickets; }
         public void setAllTickets(String v) { this.allTickets = v; }
@@ -46,6 +49,9 @@ public class JiraClaudeProperties {
         public void setDdl(String v) { this.ddl = v; }
         public String getHotfix() { return hotfix; }
         public void setHotfix(String v) { this.hotfix = v; }
+        public void setDb(String v) { this.db = v; }
+        public String getBugsDevelopmentUat() { return bugsDevelopmentUat; }
+        public void setBugsDevelopmentUat(String v) { this.bugsDevelopmentUat = v; }
     }
 
     public static class FieldNames {
